@@ -486,3 +486,66 @@ def test_empty_stage_cannot_liftoff_on_pad():
     assert snap.thrust == 0.0
 
 
+def test_tsiolkovsky_delta_v_rk4_accuracy():
+    """Verify that RK4 integration with time-varying mass matches Tsiolkovsky delta-v to high accuracy."""
+    from models.parts import Engine, FuelTank
+    from core.constants import g0
+    earth = get_earth()
+
+    isp = 300.0
+    thrust = 100_000.0
+    eng = Engine(
+        id="eng",
+        name="Engine",
+        dry_mass=100.0,
+        length=1.0,
+        radius=0.5,
+        position_offset=0.0,
+        thrust_vac=thrust,
+        thrust_sl=thrust,
+        isp_vac=isp,
+        isp_sl=isp,
+        is_ignited=True,
+        throttle=1.0,
+    )
+    # m_dot = 100_000 / (300 * 9.80665) = ~33.99 kg/s
+    tank = FuelTank(
+        id="tank",
+        name="Tank",
+        dry_mass=100.0,
+        length=2.0,
+        radius=0.5,
+        position_offset=1.0,
+        propellant_mass=800.0,
+        propellant_capacity=1000.0,
+    )
+    stage = Stage(stage_id="s1", name="Stage 1", parts=[eng, tank], position_offset=0.0)
+    rocket = Rocket(stages=[stage])
+
+    # Place in deep space without gravity/drag
+    pos = Vector2D(0.0, 1e11)
+    vehicle = FlightVehicle(
+        rocket=rocket,
+        body=earth,
+        position=pos,
+        velocity=Vector2D(0.0, 0.0),
+        state=VehicleState.IN_FLIGHT,
+    )
+    vehicle.attitude = 0.0  # Thrust along +X
+
+    m_start = vehicle.rocket.total_mass()  # 1000.0 kg
+    dt = 3.0  # Burns ~102 kg (~10% of vehicle mass)
+    snap = vehicle.step(dt=dt, throttle=1.0)
+    m_end = vehicle.rocket.total_mass()
+
+    # Analytical Tsiolkovsky delta_v
+    delta_v_exact = isp * g0 * math.log(m_start / m_end)
+    delta_v_num = vehicle.velocity.x
+
+    # If end-of-step mass had been used across RK4, error would be ~5% (~16 m/s).
+    # With 4th-order mass interpolation, relative error is < 0.01%
+    rel_error = abs(delta_v_num - delta_v_exact) / delta_v_exact
+    assert rel_error < 1e-4, f"Delta-v relative error {rel_error:.2e} exceeds 1e-4"
+
+
+

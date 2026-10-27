@@ -456,7 +456,28 @@ class FlightVehicle:
         omega = float(s[5])
 
         if self._step_cache is not None:
-            m, i_zz, y_com, y_cop, ref_area, tot_length, transverse_area = self._step_cache
+            (
+                m_start,
+                m_end,
+                i_zz_start,
+                i_zz_end,
+                y_com_start,
+                y_com_end,
+                y_cop,
+                ref_area,
+                tot_length,
+                transverse_area,
+                t_start,
+                dt_val,
+            ) = self._step_cache
+
+            # Normalized progress tau in [0, 1] through the integration step
+            tau = max(0.0, min(1.0, (t - t_start) / dt_val)) if dt_val > 0.0 else 0.0
+
+            # Time-exact mass interpolation and symmetric structural interpolation
+            m = (1.0 - tau) * m_start + tau * m_end
+            i_zz = (1.0 - tau) * i_zz_start + tau * i_zz_end
+            y_com = (1.0 - tau) * y_com_start + tau * y_com_end
         else:
             m = self.rocket.total_mass()
             i_zz = self.rocket.moment_of_inertia()
@@ -679,6 +700,11 @@ class FlightVehicle:
             alt_cur = max(0.0, self.body.altitude(self.position))
             p_amb = self.body.atmosphere.pressure(alt_cur) if self.body.atmosphere else 0.0
 
+            # Sample structural state at the START of the integration step
+            m_start = self.rocket.total_mass()
+            i_zz_start = self.rocket.moment_of_inertia()
+            y_com_start = self.rocket.center_of_mass()
+
             # Calculate nominal thrust to determine fractional burn factor on burnout
             nom_thrust = 0.0
             firing_engines: list[Engine] = []
@@ -694,15 +720,30 @@ class FlightVehicle:
             self._firing_engines = firing_engines if self._step_thrust_scale > 0.0 else []
             self._last_step_thrust = actual_thrust
 
-            # Cache structural properties that are invariant over the 4 RK4 derivative evaluations
-            m = self.rocket.total_mass()
-            i_zz = self.rocket.moment_of_inertia()
-            y_com = self.rocket.center_of_mass()
-            y_cop = self.rocket.center_of_pressure()
+            # Sample structural state at the END of the integration step
+            m_end = self.rocket.total_mass()
+            i_zz_end = self.rocket.moment_of_inertia()
+            y_com_end = self.rocket.center_of_mass()
+
+            # Cache structural properties with time-varying mass across RK4 stages
             ref_area = self._get_reference_area()
             tot_length = self._get_total_length()
             transverse_area = self._get_transverse_area()
-            self._step_cache = (m, i_zz, y_com, y_cop, ref_area, tot_length, transverse_area)
+            y_cop = self.rocket.center_of_pressure()
+            self._step_cache = (
+                m_start,
+                m_end,
+                i_zz_start,
+                i_zz_end,
+                y_com_start,
+                y_com_end,
+                y_cop,
+                ref_area,
+                tot_length,
+                transverse_area,
+                self.time,
+                dt_val,
+            )
 
             # RK4 Integration of planar 3-DOF equations of motion
             next_s = rk4_step(

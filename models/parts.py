@@ -310,7 +310,9 @@ class Engine(Part):
         isp = self.isp_vac - (self.isp_vac - self.isp_sl) * p_ratio
         return float(np.float64(max(0.0, isp)))
 
-    def get_thrust_and_mass_flow(self, ambient_pressure: float) -> tuple[float, float]:
+    def get_thrust_and_mass_flow(
+        self, ambient_pressure: float, ignore_ignited: bool = False
+    ) -> tuple[float, float]:
         """Compute effective thrust and propellant mass flow rate at ambient pressure.
 
         Equations:
@@ -321,13 +323,15 @@ class Engine(Part):
         ----------
         ambient_pressure : float
             Local atmospheric static pressure [Pa].
+        ignore_ignited : bool, default=False
+            If True, evaluate thrust ignoring engine ignition state.
 
         Returns
         -------
         tuple[float, float]
             (thrust [N], mass_flow_rate [kg/s]). Returns (0.0, 0.0) if not ignited or throttle == 0.
         """
-        if not self.is_ignited or self.throttle <= 0.0:
+        if (not self.is_ignited and not ignore_ignited) or self.throttle <= 0.0:
             return 0.0, 0.0
 
         p = float(np.float64(max(0.0, ambient_pressure)))

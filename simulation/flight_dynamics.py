@@ -493,6 +493,7 @@ class FlightVehicle:
             and self._step_thrust_scale > 0.0
         ):
             stage_base = active_stage.position_offset
+            use_ignore_ignited = bool(self._firing_engines)
             engines_to_eval = (
                 self._firing_engines
                 if self._firing_engines
@@ -505,7 +506,7 @@ class FlightVehicle:
             )
 
             for eng in engines_to_eval:
-                t_val, _ = eng.get_thrust_and_mass_flow(p_amb)
+                t_val, _ = eng.get_thrust_and_mass_flow(p_amb, ignore_ignited=use_ignore_ignited)
                 t_val *= self._step_thrust_scale
                 if t_val <= 0.0:
                     continue

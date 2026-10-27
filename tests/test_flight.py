@@ -392,3 +392,55 @@ def test_suborbital_flight_and_staging():
     assert snap.apoapsis > 100000.0, (
         f"Vehicle failed to reach 100 km space apoapsis: {snap.apoapsis / 1000:.1f} km"
     )
+
+
+def test_burnout_step_applies_thrust_in_rk4():
+    """Verify that thrust is applied in RK4 dynamics even on the propellant burnout step."""
+    from models.parts import Engine, FuelTank
+    earth = get_earth()
+    eng = Engine(
+        id="eng",
+        name="Engine",
+        dry_mass=100.0,
+        length=1.0,
+        radius=0.5,
+        position_offset=0.0,
+        thrust_vac=50000.0,
+        thrust_sl=50000.0,
+        isp_vac=300.0,
+        isp_sl=300.0,
+        is_ignited=True,
+        throttle=1.0,
+    )
+    # Mass flow = 50000 / (300 * 9.80665) = ~16.995 kg/s
+    # Give fuel for 0.5 seconds = ~8.5 kg
+    tank = FuelTank(
+        id="tank",
+        name="Tank",
+        dry_mass=100.0,
+        length=2.0,
+        radius=0.5,
+        position_offset=1.0,
+        propellant_mass=8.5,
+        propellant_capacity=100.0,
+    )
+    stage = Stage(stage_id="s1", name="Stage 1", parts=[eng, tank], position_offset=0.0)
+    rocket = Rocket(stages=[stage])
+    
+    # Place in space (no drag) with zero initial velocity
+    pos = Vector2D(0.0, earth.radius + 200000.0)
+    vehicle = FlightVehicle(rocket=rocket, body=earth, position=pos, velocity=Vector2D(0.0, 0.0), state=VehicleState.IN_FLIGHT)
+    vehicle.attitude = math.pi / 2.0  # Pointing radially outward (+y)
+    
+    # Single step of dt = 1.0 s, fuel should burn out halfway
+    snap = vehicle.step(dt=1.0)
+    
+    assert tank.propellant_mass == 0.0
+    assert eng.is_ignited is False
+    assert snap.thrust > 0.0
+    
+    # Velocity should reflect upward thrust minus gravity, NOT just pure gravity freefall
+    g_acc = earth.gravitational_acceleration_at(pos).magnitude()
+    freefall_vy = -g_acc * 1.0
+    assert vehicle.velocity.y > freefall_vy + 10.0, "Thrust was not applied in RK4 during burnout step"
+

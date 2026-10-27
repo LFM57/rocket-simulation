@@ -124,8 +124,8 @@ class Orbit:
 
     @property
     def is_closed(self) -> bool:
-        """Determine if orbit is bound/closed (e < 1.0)."""
-        return self.eccentricity < 1.0
+        """Determine if orbit is bound/closed (finite orbital period)."""
+        return self.orbital_period is not None
 
     @property
     def is_circular(self) -> bool:
@@ -134,13 +134,13 @@ class Orbit:
 
     @property
     def is_hyperbolic(self) -> bool:
-        """Determine if orbit is hyperbolic (e > 1.0)."""
-        return self.eccentricity > 1.0
+        """Determine if orbit is hyperbolic (energy > 0 and not parabolic)."""
+        return self.specific_orbital_energy > 0.0 and not self.is_parabolic
 
     @property
     def is_parabolic(self) -> bool:
-        """Determine if orbit is parabolic (e == 1.0)."""
-        return math.isclose(self.eccentricity, 1.0, abs_tol=1e-7)
+        """Determine if orbit is parabolic (infinite semi-major axis)."""
+        return math.isinf(self.semi_major_axis)
 
 
 def calculate_orbit(pos: Vector2D, vel: Vector2D, body: CelestialBody) -> Orbit:
@@ -218,32 +218,42 @@ def calculate_orbit(pos: Vector2D, vel: Vector2D, body: CelestialBody) -> Orbit:
         e_vec = Vector2D(0.0, 0.0)
 
     # 6. Conic section classification and apsis calculation
-    # Parabolic orbit: energy ~ 0 (e ~ 1.0)
-    if math.isclose(energy, 0.0, abs_tol=1e-12) or math.isclose(e, 1.0, abs_tol=1e-7):
+    # Parabolic orbit: specific kinetic energy ~= specific gravitational potential energy
+    # Dimensionless criterion: |epsilon| / (mu / r) < 1e-7 <=> math.isclose(0.5 * v_sq, mu / r, rel_tol=1e-7)
+    u_pot = mu / r
+    if math.isclose(0.5 * v_sq, u_pot, rel_tol=1e-7):
         e = 1.0
         semi_major_axis = float("inf")
-        # Semi-latus rectum p = h^2 / mu, r_p = p / 2
+        # Semi-latus rectum p = h^2 / mu, r_p = p / 2 = h^2 / (2 * mu)
+        # For radial parabolic escape (h = 0), r_p = 0.0 naturally
         r_p = float(np.float64((h * h) / (2.0 * mu))) if mu > 0.0 else 0.0
         r_a = float("inf")
         h_p = float(np.float64(r_p - body.radius))
         h_a = float("inf")
         orbital_period = None
 
-    # Hyperbolic trajectory: energy > 0 (e > 1.0)
-    elif energy > 0.0 or e > 1.0:
+    # Hyperbolic trajectory: energy > 0 (v > v_esc)
+    elif energy > 0.0:
         # Standard convention: semi-major axis for hyperbolic trajectory is negative
         semi_major_axis = float(np.float64(-mu / (2.0 * energy)))
         # Periapsis distance r_p = |a| * (e - 1) = a * (1 - e)
-        r_p = float(np.float64(abs(semi_major_axis) * (e - 1.0)))
+        # For radial hyperbolic trajectory (h = 0, e = 1.0), max(0.0, e - 1.0) ensures r_p = 0.0
+        r_p = float(np.float64(abs(semi_major_axis) * max(0.0, e - 1.0)))
         r_a = float("inf")
         h_p = float(np.float64(r_p - body.radius))
         h_a = float("inf")
         orbital_period = None
 
-    # Elliptic / Circular orbit: energy < 0 (0 <= e < 1.0)
+    # Elliptic / Circular orbit: energy < 0 (v < v_esc)
+    # Includes bound rectilinear trajectories (h = 0, e = 1.0):
+    #   a = -mu / (2 * energy) > 0
+    #   r_p = a * (1 - e) = 0.0
+    #   r_a = a * (1 + e) = 2 * a
+    #   T = 2 * pi * sqrt(a^3 / mu)
     else:
         semi_major_axis = float(np.float64(-mu / (2.0 * energy)))
-        r_p = float(np.float64(semi_major_axis * (1.0 - e)))
+        # Guard against 1-ULP floating-point overshoot where e could be 1.0000000000000002
+        r_p = float(np.float64(semi_major_axis * max(0.0, 1.0 - e)))
         r_a = float(np.float64(semi_major_axis * (1.0 + e)))
         h_p = float(np.float64(r_p - body.radius))
         h_a = float(np.float64(r_a - body.radius))

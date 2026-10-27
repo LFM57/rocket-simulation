@@ -424,3 +424,38 @@ def test_retrograde_and_moving_primary_body():
     assert math.isclose(orb.eccentricity, 0.0, abs_tol=1e-7)
     assert math.isclose(orb.semi_major_axis, r_orbit, rel_tol=1e-7)
     assert math.isclose(orb.flight_path_angle, 0.0, abs_tol=1e-7)
+
+
+def test_rectilinear_bound_trajectories():
+    """Verify that radial/rectilinear trajectories (h = 0) with energy < 0 are classified as bound ellipses."""
+    r0 = EARTH.radius + 1_000_000.0  # 1000 km altitude
+
+    # Case A: Dropped from rest (v = 0)
+    pos_rest = Vector2D(0.0, r0)
+    vel_rest = Vector2D(0.0, 0.0)
+    orb_rest = calculate_orbit(pos_rest, vel_rest, EARTH)
+
+    assert math.isclose(orb_rest.eccentricity, 1.0, abs_tol=1e-7)
+    assert orb_rest.is_closed is True
+    assert orb_rest.is_parabolic is False
+    assert not math.isinf(orb_rest.semi_major_axis)
+    assert math.isclose(orb_rest.semi_major_axis, r0 / 2.0, rel_tol=1e-7)
+    assert math.isclose(orb_rest.apoapsis_radius, r0, rel_tol=1e-7)
+    assert math.isclose(orb_rest.periapsis_radius, 0.0, abs_tol=1e-7)
+    assert orb_rest.orbital_period is not None
+    assert orb_rest.orbital_period > 0.0
+
+    # Case B: Vertical ascent at 1000 m/s
+    v_vert = 1000.0
+    pos_ascent = Vector2D(0.0, r0)
+    vel_ascent = Vector2D(0.0, v_vert)
+    orb_ascent = calculate_orbit(pos_ascent, vel_ascent, EARTH)
+
+    assert math.isclose(orb_ascent.eccentricity, 1.0, abs_tol=1e-7)
+    assert orb_ascent.is_closed is True
+    assert orb_ascent.is_parabolic is False
+    assert not math.isinf(orb_ascent.semi_major_axis)
+    assert orb_ascent.apoapsis_radius > r0
+    assert math.isclose(orb_ascent.periapsis_radius, 0.0, abs_tol=1e-7)
+    assert orb_ascent.orbital_period is not None
+

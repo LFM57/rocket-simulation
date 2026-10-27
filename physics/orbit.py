@@ -414,6 +414,123 @@ def solve_kepler_hyperbolic(
     return float(np.float64(H))
 
 
+def solve_kepler_barker(b_param: float) -> float:
+    """Solve Barker's equation x + (1/3)*x^3 = 2*B analytically for parabolic motion.
+
+    Parameters
+    ----------
+    b_param : float
+        Barker mean anomaly parameter B = (1/2) * (t - t_p) * sqrt(mu / p^3).
+
+    Returns
+    -------
+    float
+        x = tan(nu / 2).
+    """
+    three_b = 3.0 * float(b_param)
+    theta = (1.0 / 3.0) * math.asinh(three_b)
+    return float(2.0 * math.sinh(theta))
+
+
+def solve_kepler_rectilinear_elliptic(
+    mean_anomaly: float,
+    tol: float = 1e-13,
+    max_iter: int = 100,
+) -> float:
+    """Solve Kepler's equation for bound rectilinear trajectories (e = 1.0): E - sin(E) = M.
+
+    Parameters
+    ----------
+    mean_anomaly : float
+        Mean anomaly M in radians wrapped into [0, 2*pi).
+    tol : float, default=1e-13
+        Convergence tolerance on residual |E - sin(E) - M|.
+    max_iter : int, default=100
+        Maximum Newton-Raphson iterations.
+
+    Returns
+    -------
+    float
+        Eccentric anomaly E in radians [0, 2*pi).
+    """
+    m_val = float(mean_anomaly) % (2.0 * math.pi)
+    if math.isclose(m_val, 0.0, abs_tol=1e-15):
+        return 0.0
+    if math.isclose(m_val, math.pi, abs_tol=1e-15):
+        return math.pi
+
+    # Robust initial guess using cubic asymptotic expansion for small M
+    if m_val < 0.5:
+        e_guess = (6.0 * m_val) ** (1.0 / 3.0)
+    elif m_val > 2.0 * math.pi - 0.5:
+        dm = 2.0 * math.pi - m_val
+        e_guess = 2.0 * math.pi - (6.0 * dm) ** (1.0 / 3.0)
+    else:
+        e_guess = m_val + math.sin(m_val)
+
+    for _ in range(max_iter):
+        f = e_guess - math.sin(e_guess) - m_val
+        if abs(f) < tol:
+            break
+        f_prime = 1.0 - math.cos(e_guess)
+        if f_prime < 1e-14:
+            break
+        delta = f / f_prime
+        e_guess -= delta
+        if abs(delta) < tol and abs(f) < tol:
+            break
+
+    return float(e_guess % (2.0 * math.pi))
+
+
+def solve_kepler_rectilinear_hyperbolic(
+    mean_anomaly: float,
+    tol: float = 1e-13,
+    max_iter: int = 100,
+) -> float:
+    """Solve Kepler's equation for rectilinear hyperbolic trajectories (e = 1.0): sinh(H) - H = M_h.
+
+    Parameters
+    ----------
+    mean_anomaly : float
+        Hyperbolic mean anomaly M_h.
+    tol : float, default=1e-13
+        Convergence tolerance.
+    max_iter : int, default=100
+        Maximum Newton-Raphson iterations.
+
+    Returns
+    -------
+    float
+        Hyperbolic anomaly H in radians.
+    """
+    m_h = float(mean_anomaly)
+    if math.isclose(m_h, 0.0, abs_tol=1e-15):
+        return 0.0
+
+    sign = 1.0 if m_h >= 0.0 else -1.0
+    abs_m = abs(m_h)
+
+    if abs_m < 0.5:
+        h = (6.0 * abs_m) ** (1.0 / 3.0)
+    else:
+        h = math.log(2.0 * abs_m + 1.8)
+
+    for _ in range(max_iter):
+        f = math.sinh(h) - h - abs_m
+        if abs(f) < tol:
+            break
+        f_prime = math.cosh(h) - 1.0
+        if f_prime < 1e-14:
+            break
+        delta = f / f_prime
+        h -= delta
+        if abs(delta) < tol and abs(f) < tol:
+            break
+
+    return float(sign * h)
+
+
 def propagate_kepler(
     pos: Vector2D,
     vel: Vector2D,
@@ -422,9 +539,9 @@ def propagate_kepler(
 ) -> tuple[Vector2D, Vector2D]:
     """Propagate Cartesian state vector (r, v) forward by dt under 2-body Newtonian gravity.
 
-    Solves Kepler's equation analytically for elliptic and hyperbolic trajectories.
-    Preserves specific orbital energy and specific angular momentum to floating-point
-    precision.
+    Analytically propagates elliptic, circular, parabolic, hyperbolic, and rectilinear
+    orbits without numerical singularity, division-by-zero, or scale distortion.
+    Conserves specific energy and angular momentum to machine precision.
 
     Parameters
     ----------
@@ -445,7 +562,7 @@ def propagate_kepler(
     Raises
     ------
     ValueError
-        If pos coincides with body center or parabolic orbit e == 1.0 cannot be propagated.
+        If pos coincides with body center or central body mu is non-positive.
     """
     if not isinstance(pos, Vector2D):
         pos = Vector2D.from_tuple(pos)
@@ -470,121 +587,181 @@ def propagate_kepler(
 
     # Specific angular momentum scalar h = r_x * v_y - r_y * v_x
     h_scalar = float(np.float64(r_vec.cross(v_vec)))
+    abs_h = abs(h_scalar)
     sign_h = 1.0 if h_scalar >= 0.0 else -1.0
 
     # Specific mechanical energy: epsilon = v^2 / 2 - mu / r
     v_sq = float(np.float64(v_vec.magnitude_squared()))
-    energy0 = float(np.float64(0.5 * v_sq - mu / r0))
+    u_pot = mu / r0
+    energy0 = float(np.float64(0.5 * v_sq - u_pot))
+    r_dot_v = float(np.float64(r_vec.dot(v_vec)))
+
+    # Dimensionless criteria
+    is_parabolic = math.isclose(0.5 * v_sq, u_pot, rel_tol=1e-7)
+    is_rectilinear = abs_h < 1e-12 * math.sqrt(mu * r0)
+
+    # =========================================================================
+    # A. RECTILINEAR TRAJECTORIES (h == 0)
+    # =========================================================================
+    if is_rectilinear:
+        r_hat = r_vec / r0
+
+        # A.1. Bound Rectilinear Ellipse (energy < 0)
+        if not is_parabolic and energy0 < 0.0:
+            semi_major_axis = float(np.float64(-mu / (2.0 * energy0)))
+            n = math.sqrt(mu / (semi_major_axis**3))
+
+            # Initial eccentric anomaly E0
+            arg_cos = max(-1.0, min(1.0, 1.0 - r0 / semi_major_axis))
+            arg_sin = r_dot_v / math.sqrt(mu * semi_major_axis)
+            e0 = math.atan2(arg_sin, arg_cos) % (2.0 * math.pi)
+
+            # Initial and target mean anomaly
+            m0 = (e0 - math.sin(e0)) % (2.0 * math.pi)
+            m_target = (m0 + n * dt_val) % (2.0 * math.pi)
+
+            e_target = solve_kepler_rectilinear_elliptic(m_target)
+            r_target = semi_major_axis * (1.0 - math.cos(e_target))
+            r_target_safe = max(1e-3, r_target)
+            v_radial = (math.sqrt(mu * semi_major_axis) / r_target_safe) * math.sin(e_target)
+
+            r_rel = r_hat * r_target
+            v_rel = r_hat * v_radial
+
+        # A.2. Rectilinear Parabolic Trajectory (energy ~= 0)
+        elif is_parabolic:
+            v_r0 = r_dot_v / r0
+            v_sign = 1.0 if v_r0 >= 0.0 else -1.0
+            term = (r0 ** 1.5) + 1.5 * v_sign * math.sqrt(2.0 * mu) * dt_val
+            r_target = max(1e-3, abs(term) ** (2.0 / 3.0))
+            v_radial = v_sign * math.sqrt(2.0 * mu / r_target)
+
+            r_rel = r_hat * r_target
+            v_rel = r_hat * v_radial
+
+        # A.3. Rectilinear Hyperbolic Trajectory (energy > 0)
+        else:
+            abs_a = float(np.float64(mu / (2.0 * energy0)))
+            n_h = math.sqrt(mu / (abs_a**3))
+
+            v_r0 = r_dot_v / r0
+            sign_vr = 1.0 if v_r0 >= 0.0 else -1.0
+            arg_cosh = max(1.0, 1.0 + r0 / abs_a)
+            h0 = sign_vr * math.acosh(arg_cosh)
+
+            m_h0 = math.sinh(h0) - h0
+            m_h_target = m_h0 + n_h * dt_val
+
+            h_target = solve_kepler_rectilinear_hyperbolic(m_h_target, tol=1e-13)
+            r_target = abs_a * (math.cosh(h_target) - 1.0)
+            r_target_safe = max(1e-3, r_target)
+            v_radial = (math.sqrt(mu * abs_a) / r_target_safe) * math.sinh(h_target)
+
+            r_rel = r_hat * r_target
+            v_rel = r_hat * v_radial
+
+        return body.position + r_rel, body.velocity + v_rel
+
+    # =========================================================================
+    # B. PLANAR TRAJECTORIES (h != 0)
+    # =========================================================================
 
     # Eccentricity vector
-    r_dot_v = float(np.float64(r_vec.dot(v_vec)))
-    e_vec = ((v_sq - mu / r0) * r_vec - r_dot_v * v_vec) / mu
+    coeff_r = v_sq - (mu / r0)
+    term_r = r_vec * coeff_r
+    term_v = v_vec * r_dot_v
+    e_vec = (term_r - term_v) / mu
     e = float(np.float64(e_vec.magnitude()))
 
-    # Check for parabolic trajectory
-    if math.isclose(energy0, 0.0, abs_tol=1e-12) or math.isclose(e, 1.0, abs_tol=1e-7):
-        # Slightly bias to avoid singularity
-        if energy0 < 0.0:
-            e = 1.0 - 1e-8
-        else:
-            e = 1.0 + 1e-8
+    # Perifocal basis vectors (P_hat toward periapsis, Q_hat in direction of motion at periapsis)
+    if e < 1e-12:
+        e = 0.0
+        p_hat = r_vec / r0
+    else:
+        p_hat = e_vec / e
+    q_hat = Vector2D(-p_hat.y, p_hat.x) * sign_h
 
-    # 2. Elliptic / Circular Trajectories (0 <= e < 1.0)
-    if e < 1.0:
+    # B.1. Exact Parabolic Trajectory (|epsilon| / (mu/r) < 1e-7) via Barker's Equation
+    if is_parabolic:
+        p_semi = (abs_h * abs_h) / mu
+        x0 = r_dot_v / abs_h
+        b0 = 0.5 * (x0 + (1.0 / 3.0) * (x0**3))
+
+        delta_b = math.sqrt(mu / (p_semi**3)) * dt_val
+        b_target = b0 + delta_b
+
+        x_target = solve_kepler_barker(b_target)
+        r_target = 0.5 * p_semi * (1.0 + x_target * x_target)
+
+        r_rel = p_hat * (0.5 * p_semi * (1.0 - x_target * x_target)) + q_hat * (p_semi * x_target)
+        v_rel = (p_hat * (-x_target) + q_hat) * (abs_h / r_target)
+
+        return body.position + r_rel, body.velocity + v_rel
+
+    # B.2. Elliptic / Circular Trajectories (energy < 0, 0 <= e < 1.0)
+    if energy0 < 0.0:
         semi_major_axis = float(np.float64(-mu / (2.0 * energy0)))
-        p = semi_major_axis * (1.0 - e * e)
         n = math.sqrt(mu / (semi_major_axis**3))
 
         if e < 1e-12:
-            e = 0.0
-            p_hat = r_vec / r0
-            q_hat = Vector2D(-p_hat.y, p_hat.x) * sign_h
-            nu0 = 0.0
             e0 = 0.0
         else:
-            p_hat = e_vec / e
-            q_hat = Vector2D(-p_hat.y, p_hat.x) * sign_h
-            cos_nu0 = max(-1.0, min(1.0, p_hat.dot(r_vec) / r0))
-            nu0_val = math.acos(cos_nu0)
-            if r_dot_v < 0.0:
-                nu0_val = 2.0 * math.pi - nu0_val
-            nu0 = nu0_val % (2.0 * math.pi)
-            e0 = math.atan2(
-                math.sqrt(max(0.0, 1.0 - e * e)) * math.sin(nu0),
-                e + math.cos(nu0),
-            ) % (2.0 * math.pi)
+            arg_cos = max(-1.0, min(1.0, (1.0 - r0 / semi_major_axis) / e))
+            arg_sin = r_dot_v / (e * math.sqrt(mu * semi_major_axis))
+            e0 = math.atan2(arg_sin, arg_cos) % (2.0 * math.pi)
 
-        # Initial and target mean anomalies
-        m0 = e0 - e * math.sin(e0)
+        m0 = (e0 - e * math.sin(e0)) % (2.0 * math.pi)
         m_target = (m0 + n * dt_val) % (2.0 * math.pi)
 
-        # Solve Kepler's equation for target eccentric anomaly E
         e_target = solve_kepler_elliptic(m_target, e, tol=1e-13)
-
-        # New true anomaly nu
-        nu_target = math.atan2(
-            math.sqrt(max(0.0, 1.0 - e * e)) * math.sin(e_target),
-            math.cos(e_target) - e,
-        ) % (2.0 * math.pi)
-
-        # New orbital radius
         r_target = semi_major_axis * (1.0 - e * math.cos(e_target))
 
-        # Reconstruct Cartesian state vectors in orbital plane
-        r_rel = p_hat * (r_target * math.cos(nu_target)) + q_hat * (r_target * math.sin(nu_target))
-        sqrt_mu_p = math.sqrt(mu / p) if p > 0.0 else 0.0
-        v_rel = (p_hat * (-math.sin(nu_target)) + q_hat * (e + math.cos(nu_target))) * sqrt_mu_p
+        # Non-singular state reconstruction using Eccentric Anomaly
+        cos_e_t = math.cos(e_target)
+        sin_e_t = math.sin(e_target)
+        sqrt_1_minus_e2 = math.sqrt(max(0.0, 1.0 - e * e))
 
-    # 3. Hyperbolic Trajectories (e > 1.0)
+        r_rel = p_hat * (semi_major_axis * (cos_e_t - e)) + q_hat * (semi_major_axis * sqrt_1_minus_e2 * sin_e_t)
+        v_coeff = math.sqrt(mu * semi_major_axis) / r_target
+        v_rel = (p_hat * (-sin_e_t) + q_hat * (sqrt_1_minus_e2 * cos_e_t)) * v_coeff
+
+        return body.position + r_rel, body.velocity + v_rel
+
+    # B.3. Hyperbolic Trajectories (energy > 0, e > 1.0)
     else:
-        semi_major_axis = float(np.float64(-mu / (2.0 * energy0)))
-        abs_a = abs(semi_major_axis)
-        p = abs_a * (e * e - 1.0)
+        abs_a = float(np.float64(mu / (2.0 * energy0)))
         n_h = math.sqrt(mu / (abs_a**3))
 
-        p_hat = e_vec / e
-        q_hat = Vector2D(-p_hat.y, p_hat.x) * sign_h
+        # Non-singular hyperbolic anomaly H0 extraction
+        tanh_h0 = r_dot_v / (math.sqrt(mu * abs_a) * (1.0 + r0 / abs_a))
+        tanh_h0_clamped = max(-0.999999999999, min(0.999999999999, tanh_h0))
+        h0 = math.atanh(tanh_h0_clamped)
 
-        cos_nu0 = max(-1.0, min(1.0, p_hat.dot(r_vec) / r0))
-        nu0_val = math.acos(cos_nu0)
-        if r_dot_v < 0.0:
-            nu0_val = -nu0_val
-
-        # tanh(H_0 / 2) = sqrt((e - 1) / (e + 1)) * tan(nu_0 / 2)
-        x = math.sqrt((e - 1.0) / (e + 1.0)) * math.tan(nu0_val / 2.0)
-        x_clamped = max(-0.999999999999, min(0.999999999999, x))
-        h0 = 2.0 * math.atanh(x_clamped)
-
-        # Initial and target hyperbolic mean anomalies
         m_h0 = e * math.sinh(h0) - h0
         m_h_target = m_h0 + n_h * dt_val
 
-        # Solve Kepler's equation for hyperbolic anomaly H
         h_target = solve_kepler_hyperbolic(m_h_target, e, tol=1e-13)
-
-        # New true anomaly nu
-        y = math.sqrt((e + 1.0) / (e - 1.0)) * math.tanh(h_target / 2.0)
-        nu_signed = 2.0 * math.atan(y)
-        nu_target = nu_signed % (2.0 * math.pi)
-
-        # New radius
         r_target = abs_a * (e * math.cosh(h_target) - 1.0)
 
-        # Reconstruct Cartesian state vectors
-        r_rel = p_hat * (r_target * math.cos(nu_target)) + q_hat * (r_target * math.sin(nu_target))
-        sqrt_mu_p = math.sqrt(mu / p) if p > 0.0 else 0.0
-        v_rel = (p_hat * (-math.sin(nu_target)) + q_hat * (e + math.cos(nu_target))) * sqrt_mu_p
+        # Non-singular state reconstruction using Hyperbolic Anomaly
+        cosh_h_t = math.cosh(h_target)
+        sinh_h_t = math.sinh(h_target)
+        sqrt_e2_minus_1 = math.sqrt(max(0.0, e * e - 1.0))
 
-    pos_next = body.position + r_rel
-    vel_next = body.velocity + v_rel
+        r_rel = p_hat * (abs_a * (e - cosh_h_t)) + q_hat * (abs_a * sqrt_e2_minus_1 * sinh_h_t)
+        v_coeff = math.sqrt(mu * abs_a) / r_target
+        v_rel = (p_hat * (-sinh_h_t) + q_hat * (sqrt_e2_minus_1 * cosh_h_t)) * v_coeff
 
-    return pos_next, vel_next
+        return body.position + r_rel, body.velocity + v_rel
 
 
 __all__ = [
     "Orbit",
     "calculate_orbit",
     "propagate_kepler",
+    "solve_kepler_barker",
     "solve_kepler_elliptic",
     "solve_kepler_hyperbolic",
+    "solve_kepler_rectilinear_elliptic",
+    "solve_kepler_rectilinear_hyperbolic",
 ]

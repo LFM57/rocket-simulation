@@ -459,3 +459,43 @@ def test_rectilinear_bound_trajectories():
     assert math.isclose(orb_ascent.periapsis_radius, 0.0, abs_tol=1e-7)
     assert orb_ascent.orbital_period is not None
 
+
+def test_propagate_kepler_parabolic_no_teleportation():
+    """Verify propagate_kepler does not crash with ZeroDivisionError or teleport on parabolic orbits."""
+    from physics.orbit import propagate_kepler
+
+    r0 = EARTH.radius + 500_000.0
+    v_esc = math.sqrt(2.0 * EARTH.mu / r0)
+    pos = Vector2D(r0, 0.0)
+    vel = Vector2D(0.0, v_esc)  # Exact escape speed
+
+    # Propagate for 100 seconds
+    pos_next, vel_next = propagate_kepler(pos, vel, EARTH, dt=100.0)
+
+    # Spacecraft should move a reasonable distance (around ~1100 km), NOT 1300 AU (~2e14 m)!
+    dist = pos_next.magnitude()
+    assert r0 < dist < r0 + 2_000_000.0, f"Teleportation detected: dist={dist}"
+
+    # Velocity magnitude should decrease according to 2-body gravity
+    v_next = vel_next.magnitude()
+    assert v_next < v_esc
+    assert math.isclose(0.5 * v_next**2, EARTH.mu / dist, rel_tol=1e-6)
+
+
+def test_propagate_kepler_rectilinear_elliptical():
+    """Verify propagate_kepler preserves velocity and position for vertical rectilinear drop/climb."""
+    from physics.orbit import propagate_kepler
+
+    r0 = EARTH.radius + 1_000_000.0
+    pos = Vector2D(0.0, r0)
+    vel = Vector2D(0.0, 500.0)  # Climbing vertically
+
+    pos_next, vel_next = propagate_kepler(pos, vel, EARTH, dt=10.0)
+
+    # Should still be strictly along Y-axis with non-zero vertical velocity
+    assert math.isclose(pos_next.x, 0.0, abs_tol=1e-7)
+    assert math.isclose(vel_next.x, 0.0, abs_tol=1e-7)
+    assert pos_next.y > r0
+    assert 0.0 < vel_next.y < 500.0  # Decelerated by gravity
+
+

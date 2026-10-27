@@ -2,11 +2,30 @@
 
 This document catalogs the critical bugs, mathematical/physical inaccuracies, and edge-case defects identified in the 2D rocket simulation codebase.
 
+## Status Summary
+
+| # | Bug Title | Status | Commit |
+|---|-----------|--------|--------|
+| 1.1 | Zero Thrust Applied in RK4 Integration on Propellant Burnout Step | **DONE** | `4dfa9f1` |
+| 1.2 | Rectilinear / Radial Trajectories Misclassified as Parabolic Escape Orbits | **DONE** | `347461c` |
+| 1.3 | `propagate_kepler` Parabolic Singularity & Teleportation Bug | **DONE** | `eb5a4a3` |
+| 1.4 | On-Rails Time Warp Tunnels Through Atmosphere and Surface | **DONE** | `c32d864` |
+| 1.5 | Empty Stage Liftoff Bug on Launchpad | **DONE** | `210df22` |
+| 2.1 | First-Order $O(\Delta t)$ Mass Discretization Bias in RK4 Integration | **DONE** | `1cec00f` |
+| 2.2 | Aerodynamic Cross-Flow Force Direction, Lift Slope, and Area Overcounting | **DONE** | `f4a8aaa` |
+| 2.3 | Spurious `CollisionWarning` Emitted While `ON_PAD` or `LANDED` | **DONE** | `ecdc141` |
+| 2.4 | Surface Co-Rotation Velocity Bug on Airless Rotating Bodies | **DONE** | `17d2bd6` |
+| 3.1 | `TelemetryLogger` Overestimates Expended $\Delta v$ on Sub-Stepped Burnout and Staging | **DONE** | `d65685e` |
+| 3.2 | `TelemetryLogger.get_summary()` Ignores Aerodynamic G-Forces | **TODO** | Open |
+| 3.3 | `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop | **TODO** | Open |
+| 3.4 | Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch | **TODO** | Open |
+
 ---
 
 ## 1. Critical Bugs (Physics & Numerical Failures)
 
-### 1.1. Zero Thrust Applied in RK4 Integration on the Propellant Burnout Step
+### 1.1. [DONE] Zero Thrust Applied in RK4 Integration on the Propellant Burnout Step
+- **Status**: Solved (commit `4dfa9f1`)
 - **Severity**: Critical
 - **Locations**:
   - `simulation/flight_dynamics.py` (lines 407–410, 515–538)
@@ -46,7 +65,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 1.2. Rectilinear / Radial Trajectories Misclassified as Parabolic Escape Orbits
+### 1.2. [DONE] Rectilinear / Radial Trajectories Misclassified as Parabolic Escape Orbits
+- **Status**: Solved (commit `347461c`)
 - **Severity**: Critical
 - **Location**: `physics/orbit.py` (lines 201 and 395)
 - **Mathematical Root Cause**:
@@ -69,7 +89,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 1.3. `propagate_kepler` Parabolic Singularity & Teleportation Bug
+### 1.3. [DONE] `propagate_kepler` Parabolic Singularity & Teleportation Bug
+- **Status**: Solved (commit `eb5a4a3`)
 - **Severity**: Critical
 - **Location**: `physics/orbit.py` (lines 395–475)
 - **Description**:
@@ -93,7 +114,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 1.4. On-Rails Time Warp Tunnels Through Atmosphere and Planet Surface
+### 1.4. [DONE] On-Rails Time Warp Tunnels Through Atmosphere and Planet Surface
+- **Status**: Solved (commit `c32d864`)
 - **Severity**: Critical
 - **Location**: `simulation/simulation.py` (lines 142, 206–260)
 - **Description**:
@@ -114,7 +136,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 1.5. Empty Stage Liftoff Bug on Launchpad
+### 1.5. [DONE] Empty Stage Liftoff Bug on Launchpad
+- **Status**: Solved (commit `210df22`)
 - **Severity**: High
 - **Location**: `simulation/flight_dynamics.py` (lines 486–504)
 - **Description**:
@@ -129,7 +152,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ## 2. Mathematical & Physical Modeling Issues
 
-### 2.1. First-Order $O(\Delta t)$ Mass Discretization Bias in RK4 Integration
+### 2.1. [DONE] First-Order $O(\Delta t)$ Mass Discretization Bias in RK4 Integration
+- **Status**: Solved (commit `1cec00f`)
 - **Severity**: Medium
 - **Location**: `simulation/flight_dynamics.py` (lines 522–534)
 - **Mathematics**:
@@ -138,7 +162,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 2.2. Aerodynamic Cross-Flow Force Direction, `lift_coefficient` Slope, and Area Overcounting
+### 2.2. [DONE] Aerodynamic Cross-Flow Force Direction, `lift_coefficient` Slope, and Area Overcounting
+- **Status**: Solved (commit `f4a8aaa`)
 - **Severity**: Medium
 - **Locations**:
   - `physics/aerodynamics.py` (lines 119–137, 296–315)
@@ -163,7 +188,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 2.3. Spurious `CollisionWarning` Emitted While `ON_PAD` or `LANDED`
+### 2.3. [DONE] Spurious `CollisionWarning` Emitted While `ON_PAD` or `LANDED`
+- **Status**: Solved (commit `ecdc141`)
 - **Severity**: Medium
 - **Locations**:
   - `physics/orbit.py` (line 177)
@@ -181,7 +207,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 2.4. Surface Co-Rotation Velocity Bug on Airless Rotating Bodies
+### 2.4. [DONE] Surface Co-Rotation Velocity Bug on Airless Rotating Bodies
+- **Status**: Solved (commit `17d2bd6`)
 - **Severity**: Medium
 - **Locations**:
   - `simulation/flight_dynamics.py` (lines 270–273 vs. lines 511, 557, 584)
@@ -201,7 +228,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ## 3. Telemetry & Simulation Orchestrator Defects
 
-### 3.1. `TelemetryLogger` Overestimates Expended $\Delta v$ on Sub-Stepped Burnout and Staging
+### 3.1. [DONE] `TelemetryLogger` Overestimates Expended $\Delta v$ on Sub-Stepped Burnout and Staging
+- **Status**: Solved (commit `d65685e`)
 - **Severity**: Low / Medium
 - **Location**: `simulation/telemetry.py` (lines 95–103)
 - **Description**:
@@ -219,7 +247,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 3.2. `TelemetryLogger.get_summary()` Ignores Aerodynamic G-Forces
+### 3.2. [TODO] `TelemetryLogger.get_summary()` Ignores Aerodynamic G-Forces
+- **Status**: Open
 - **Severity**: Low / Medium
 - **Location**: `simulation/telemetry.py` (lines 232–235)
 - **Description**:
@@ -235,7 +264,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 3.3. `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop
+### 3.3. [TODO] `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop
+- **Status**: Open
 - **Severity**: Low
 - **Location**: `simulation/simulation.py` (lines 269–299)
 - **Description**:
@@ -258,7 +288,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 3.4. Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch
+### 3.4. [TODO] Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch
+- **Status**: Open
 - **Severity**: Low
 - **Locations**:
   - `models/parts.py` (lines 334–341), `models/rocket.py` (lines 393–432)
@@ -266,4 +297,3 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 - **Description**:
   1. `Decoupler` defines `separation_impulse: float = 0.0` (configured to `5000.0 N s` in `create_falcon_9()`), but neither `Rocket.stage()` nor `FlightVehicle.stage()` applies the impulse $\Delta v = J / m$ upon stage separation.
   2. The docstring of `Rocket.thrust_force_and_torque()` (line 346) states `tau_thrust = (y_engine - y_CoM) * (T * sin(delta))`, whereas the implementation (line 387) computes `total_tau += -arm * fx = -(y_eng - y_com) * (T * sin(delta))`.
-

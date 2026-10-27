@@ -390,9 +390,9 @@ class FlightVehicle:
         # Attitude stands perpendicular to the local planetary surface: theta = atan2(y, x)
         self.attitude = float(np.float64(math.atan2(self.position.y, self.position.x)))
 
-        # Velocity matches surface atmospheric co-rotation wind speed at position
+        # Velocity matches planetary surface co-rotation speed at position
         omega_p = self._get_planet_omega()
-        self.velocity = Vector2D(-omega_p * self.position.y, omega_p * self.position.x)
+        self.velocity = self.body.surface_velocity_at(self.position)
         self.angular_velocity = omega_p
 
     # --- Propulsion & Staging Interfaces ---
@@ -593,7 +593,7 @@ class FlightVehicle:
         """Evaluate ground collision / touchdown boundary conditions."""
         r_hat = self.position.normalized()
         self.position = r_hat * self.body.radius
-        v_surface = self.body.wind_velocity_at(self.position)
+        v_surface = self.body.surface_velocity_at(self.position)
         v_rel = (self.velocity - v_surface).magnitude()
         omega_p = self._get_planet_omega()
 
@@ -705,7 +705,7 @@ class FlightVehicle:
                 self.rocket.burn_fuel(dt_val, p_sl)
                 d_phi = omega_p * dt_val
                 self.position = self.position.rotate(d_phi).normalized() * self.body.radius
-                self.velocity = self.body.wind_velocity_at(self.position)
+                self.velocity = self.body.surface_velocity_at(self.position)
                 self.attitude = float(np.float64(math.atan2(self.position.y, self.position.x)))
                 self.angular_velocity = omega_p
                 if target_pitch is None:
@@ -786,7 +786,7 @@ class FlightVehicle:
             # Co-rotate with planetary surface
             d_phi = omega_p * dt_val
             self.position = self.position.rotate(d_phi).normalized() * self.body.radius
-            self.velocity = self.body.wind_velocity_at(self.position)
+            self.velocity = self.body.surface_velocity_at(self.position)
             self.attitude = float(np.float64(math.atan2(self.position.y, self.position.x)))
             self.angular_velocity = omega_p
             self.time += dt_val

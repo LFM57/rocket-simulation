@@ -571,5 +571,38 @@ def test_no_spurious_collision_warning_on_pad_or_landed():
             vehicle.step(dt=0.5, throttle=0.0)
 
 
+def test_surface_corotation_velocity_airless_rotating_body():
+    """Verify that an airless rotating body maintains proper surface velocity while ON_PAD or LANDED."""
+    from physics.celestial import CelestialBody
+    # Airless rotating asteroid/moon
+    rot_period = 86400.0  # 1 day
+    radius = 1_000_000.0
+    body = CelestialBody(
+        name="AirlessPlanet",
+        mass=1e22,
+        radius=radius,
+        rotation_period=rot_period,
+        atmosphere=None,
+    )
+    f9 = create_falcon_9()
+    pos = Vector2D(0.0, radius)  # At (0, R)
+    vehicle = FlightVehicle(rocket=f9, body=body, position=pos, state=VehicleState.ON_PAD)
+
+    expected_speed = (2.0 * math.pi / rot_period) * radius
+    assert math.isclose(vehicle.velocity.magnitude(), expected_speed, rel_tol=1e-5)
+
+    # Step on pad without thrusting: surface velocity must remain non-zero and match rotation
+    vehicle.step(dt=1.0, throttle=0.0)
+    assert vehicle.state == VehicleState.ON_PAD
+    assert math.isclose(vehicle.velocity.magnitude(), expected_speed, rel_tol=1e-5)
+
+    # In LANDED state as well
+    vehicle.state = VehicleState.LANDED
+    vehicle.step(dt=1.0, throttle=0.0)
+    assert vehicle.state == VehicleState.LANDED
+    assert math.isclose(vehicle.velocity.magnitude(), expected_speed, rel_tol=1e-5)
+
+
+
 
 

@@ -272,6 +272,36 @@ class CelestialBody:
         dist = (pos - self.position).magnitude()
         return float(np.float64(dist) - np.float64(self.radius))
 
+    def surface_velocity_at(self, pos: Vector2D) -> Vector2D:
+        """Calculate planetary surface co-rotation velocity at a given position.
+
+        Equation:
+            omega_planet = (2 * pi / rotation_period) * k_hat
+            v_surface = omega_planet x (pos - body.position) + body.velocity
+            In 2D: v_surface = Vector2D(-omega * r_y, omega * r_x) + body.velocity
+
+        Parameters
+        ----------
+        pos : Vector2D
+            Inertial coordinates [m].
+
+        Returns
+        -------
+        Vector2D
+            Surface velocity vector in inertial frame [m/s].
+            Returns body.velocity if rotation_period == 0.
+        """
+        if math.isclose(self.rotation_period, 0.0, abs_tol=1e-15):
+            return self.velocity
+
+        if not isinstance(pos, Vector2D):
+            pos = Vector2D.from_tuple(pos)
+
+        r_vec = pos - self.position
+        omega = float(np.float64(2.0 * math.pi / self.rotation_period))
+        v_rot = Vector2D(-omega * r_vec.y, omega * r_vec.x)
+        return self.velocity + v_rot
+
     def wind_velocity_at(self, pos: Vector2D) -> Vector2D:
         """Calculate atmospheric wind velocity due to planetary co-rotation.
 

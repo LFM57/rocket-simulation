@@ -647,7 +647,10 @@ class FlightVehicle:
 
             # Calculate instantaneous net thrust vector
             f_thrust_vec = Vector2D(0.0, 0.0)
-            if self.rocket.active_stage is not None:
+            if (
+                self.rocket.active_stage is not None
+                and self.rocket.active_stage.propellant_mass() > 0.0
+            ):
                 for eng in self.rocket.active_stage.engines:
                     if eng.is_ignited and eng.throttle > 0.0:
                         t_e, _ = eng.get_thrust_and_mass_flow(p_sl)

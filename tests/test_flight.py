@@ -444,3 +444,45 @@ def test_burnout_step_applies_thrust_in_rk4():
     freefall_vy = -g_acc * 1.0
     assert vehicle.velocity.y > freefall_vy + 10.0, "Thrust was not applied in RK4 during burnout step"
 
+
+def test_empty_stage_cannot_liftoff_on_pad():
+    """Verify an ignited engine on an empty propellant stage cannot trigger liftoff."""
+    from models.parts import Engine, FuelTank
+    earth = get_earth()
+    eng = Engine(
+        id="eng",
+        name="Engine",
+        dry_mass=100.0,
+        length=1.0,
+        radius=0.5,
+        position_offset=0.0,
+        thrust_vac=100000.0,
+        thrust_sl=80000.0,  # High thrust, TWR > 5 if firing
+        isp_vac=300.0,
+        isp_sl=280.0,
+        is_ignited=True,
+        throttle=1.0,
+    )
+    tank = FuelTank(
+        id="tank",
+        name="Empty Tank",
+        dry_mass=100.0,
+        length=2.0,
+        radius=0.5,
+        position_offset=1.0,
+        propellant_mass=0.0,  # Empty!
+        propellant_capacity=1000.0,
+    )
+    stage = Stage(stage_id="s1", name="Stage 1", parts=[eng, tank], position_offset=0.0)
+    rocket = Rocket(stages=[stage])
+
+    # Position on pad
+    pos = Vector2D(0.0, earth.radius)
+    vehicle = FlightVehicle(rocket=rocket, body=earth, position=pos, state=VehicleState.ON_PAD)
+    vehicle.attitude = math.pi / 2.0
+
+    snap = vehicle.step(dt=1.0, throttle=1.0)
+    assert vehicle.state == VehicleState.ON_PAD, "Empty rocket should remain ON_PAD"
+    assert snap.thrust == 0.0
+
+

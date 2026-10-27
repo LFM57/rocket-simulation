@@ -143,7 +143,12 @@ class Orbit:
         return math.isinf(self.semi_major_axis)
 
 
-def calculate_orbit(pos: Vector2D, vel: Vector2D, body: CelestialBody) -> Orbit:
+def calculate_orbit(
+    pos: Vector2D,
+    vel: Vector2D,
+    body: CelestialBody,
+    warn: bool = True,
+) -> Orbit:
     """Calculate 2D Keplerian orbital elements from state vectors relative to a celestial body.
 
     Computes relative position r = pos - body.position and relative velocity
@@ -162,6 +167,8 @@ def calculate_orbit(pos: Vector2D, vel: Vector2D, body: CelestialBody) -> Orbit:
         Inertial velocity vector of the orbiting spacecraft [m/s].
     body : CelestialBody
         Primary celestial body providing the central gravitational field.
+    warn : bool, default=True
+        Whether to emit a collision warning if pos is below the planetary surface.
 
     Returns
     -------
@@ -189,7 +196,7 @@ def calculate_orbit(pos: Vector2D, vel: Vector2D, body: CelestialBody) -> Orbit:
         )
 
     # Check for surface collision and trigger warning if below surface
-    body.is_colliding(pos)
+    body.is_colliding(pos, warn=warn)
 
     # 2. Gravitational parameter
     mu = float(np.float64(body.mu))

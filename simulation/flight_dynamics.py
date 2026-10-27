@@ -829,7 +829,8 @@ class FlightVehicle:
             transverse_area=self._get_transverse_area(),
         )
 
-        orbit = calculate_orbit(self.position, self.velocity, self.body)
+        warn_collision = self.state == VehicleState.IN_FLIGHT
+        orbit = calculate_orbit(self.position, self.velocity, self.body, warn=warn_collision)
 
         if self._last_step_thrust is not None:
             current_thrust = self._last_step_thrust

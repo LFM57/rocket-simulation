@@ -548,4 +548,28 @@ def test_tsiolkovsky_delta_v_rk4_accuracy():
     assert rel_error < 1e-4, f"Delta-v relative error {rel_error:.2e} exceeds 1e-4"
 
 
+def test_no_spurious_collision_warning_on_pad_or_landed():
+    """Verify that no CollisionWarning is emitted while stationary ON_PAD or LANDED."""
+    import warnings
+    from physics.celestial import CollisionWarning
+    earth = get_earth()
+    f9 = create_falcon_9()
+    pos = Vector2D(0.0, earth.radius)
+    vehicle = FlightVehicle(rocket=f9, body=earth, position=pos, state=VehicleState.ON_PAD)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", CollisionWarning)
+        # Advance 20 steps on pad
+        for _ in range(20):
+            vehicle.step(dt=0.5, throttle=0.0)
+
+    # Also verify LANDED state
+    vehicle.state = VehicleState.LANDED
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", CollisionWarning)
+        for _ in range(20):
+            vehicle.step(dt=0.5, throttle=0.0)
+
+
+
 

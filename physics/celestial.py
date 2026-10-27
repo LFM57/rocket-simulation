@@ -243,7 +243,7 @@ class CelestialBody:
             True if position is inside the body radius, False otherwise.
         """
         dist = (pos - self.position).magnitude()
-        colliding = dist < self.radius
+        colliding = dist < (self.radius - 1e-6)
         if colliding and warn:
             warnings.warn(
                 f"Collision detected with {self.name}: position {pos} is below planetary radius "

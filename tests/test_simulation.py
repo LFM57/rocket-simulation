@@ -441,3 +441,66 @@ def test_time_warp_safety_clamps():
     sim_burn.step(wall_dt=0.1, throttle=1.0)
     assert sim_burn.warp_mode == WarpMode.PHYSICS
     assert sim_burn.time_warp == 1.0
+
+
+def test_hyperbolic_reentry_interception_on_rails():
+    """Verify hyperbolic trajectories do not bypass entry interception in on-rails warp."""
+    earth = get_earth()
+    f9 = create_falcon_9()
+    cutoff = 100_000.0  # 100 km Karman line
+    r_atm = earth.radius + cutoff
+
+    # Place vehicle at 300 km altitude inbound on a hyperbolic trajectory with periapsis at 50 km (inside atmosphere)
+    r_init = earth.radius + 300_000.0
+    rp_target = earth.radius + 50_000.0
+    e_hyp = 1.2
+    # Semi-major axis: rp = a * (e - 1) => a = rp / (e - 1)
+    a_h = rp_target / (e_hyp - 1.0)
+    # v^2 = mu * (2/r + 1/a_h)
+    v_mag = math.sqrt(earth.mu * (2.0 / r_init + 1.0 / a_h))
+    # Inward flight path angle
+    # r = a_h * (e * cosh(H) - 1)
+    cosh_h = (1.0 + r_init / a_h) / e_hyp
+    h_anom = -math.acosh(cosh_h)
+    # r_dot_v = sqrt(mu * a_h) * e * sinh(H)
+    r_dot_v = math.sqrt(earth.mu * a_h) * e_hyp * math.sinh(h_anom)
+    # Inbound radial velocity component
+    v_r = r_dot_v / r_init
+    v_theta = -math.sqrt(max(0.0, v_mag**2 - v_r**2))
+
+    pos = Vector2D(r_init, 0.0)
+    vel = Vector2D(v_r, v_theta)
+
+    vehicle = FlightVehicle(f9, earth, pos, vel, state=VehicleState.IN_FLIGHT)
+    sim = Simulation(vehicle, earth)
+    sim.set_time_warp(100.0)
+    assert sim.warp_mode == WarpMode.ON_RAILS
+
+    # Step forward with large macro-step: should drop to PHYSICS before tunneling into planet
+    sim.step(wall_dt=10.0)
+    assert sim.warp_mode == WarpMode.PHYSICS
+    assert sim.time_warp == 1.0
+    # Altitude should be clamped at entry boundary, not deeply negative
+    assert vehicle.altitude >= -100.0
+
+
+def test_airless_body_impact_detection_on_rails():
+    """Verify that on airless bodies, on-rails warp evaluates crash conditions upon impact."""
+    from physics.celestial import get_moon
+    moon = get_moon()
+    f9 = create_falcon_9()
+
+    # Place vehicle at 50 km altitude falling vertically at 1000 m/s onto Moon
+    pos = Vector2D(0.0, moon.radius + 50_000.0)
+    vel = Vector2D(0.0, -1000.0)
+
+    vehicle = FlightVehicle(f9, moon, pos, vel, state=VehicleState.IN_FLIGHT)
+    sim = Simulation(vehicle, moon)
+    sim.set_time_warp(100.0)
+    assert sim.warp_mode == WarpMode.ON_RAILS
+
+    # Step forward 1.0s * 100 = 100 s: should impact surface, drop warp, and transition to DESTROYED
+    sim.step(wall_dt=1.0)
+    assert sim.warp_mode == WarpMode.PHYSICS
+    assert sim.vehicle.state == VehicleState.DESTROYED
+

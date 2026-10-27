@@ -21,7 +21,7 @@ import numpy as np
 from core.integrator import wrap_angle_pi
 from core.vector2d import Vector2D
 from physics.celestial import CelestialBody
-from physics.orbit import calculate_orbit, propagate_kepler
+from physics.orbit import calculate_orbit, calculate_time_to_entry, propagate_kepler
 from simulation.autopilot import SASMode
 from simulation.flight_dynamics import FlightVehicle, TelemetrySnapshot, VehicleState
 from simulation.telemetry import TelemetryLogger
@@ -141,7 +141,7 @@ class Simulation:
         # Check safety conditions for high-speed on-rails warp
         is_in_flight = self.vehicle.state == VehicleState.IN_FLIGHT
         alt = self.body.altitude(self.vehicle.position)
-        is_outside_atmosphere = alt >= (self.cutoff_altitude - 1e-4)
+        is_outside_atmosphere = alt >= self.cutoff_altitude
         is_engines_idle = not self.is_thrusting()
 
         if is_in_flight and is_outside_atmosphere and is_engines_idle:
@@ -206,47 +206,38 @@ class Simulation:
         # 2. On-Rails Warp Mode: Analytical Keplerian conic propagation
         else:
             if dt_sim > 0.0:
-                step_dt = dt_sim
-                # Check for atmospheric reentry boundary interception
                 cutoff = self.cutoff_altitude
                 r_atm = self.body.radius + cutoff
-                orbit = calculate_orbit(self.vehicle.position, self.vehicle.velocity, self.body)
 
-                # If orbit intersects atmosphere, calculate time until atmospheric entry
-                if orbit.periapsis_radius < r_atm and orbit.eccentricity < 1.0:
-                    p = orbit.semi_major_axis * (1.0 - orbit.eccentricity ** 2)
-                    cos_nu_entry = (p / r_atm - 1.0) / orbit.eccentricity
-                    if -1.0 <= cos_nu_entry <= 1.0:
-                        nu_entry = 2.0 * math.pi - math.acos(cos_nu_entry)
-                        e_anom_entry = 2.0 * math.atan(
-                            math.sqrt((1.0 - orbit.eccentricity) / (1.0 + orbit.eccentricity))
-                            * math.tan(nu_entry / 2.0)
-                        ) % (2.0 * math.pi)
-                        m_entry = e_anom_entry - orbit.eccentricity * math.sin(e_anom_entry)
-
-                        nu_curr = orbit.true_anomaly
-                        e_anom_curr = 2.0 * math.atan(
-                            math.sqrt((1.0 - orbit.eccentricity) / (1.0 + orbit.eccentricity))
-                            * math.tan(nu_curr / 2.0)
-                        ) % (2.0 * math.pi)
-                        m_curr = e_anom_curr - orbit.eccentricity * math.sin(e_anom_curr)
-
-                        n = math.sqrt(self.body.mu / (orbit.semi_major_axis ** 3))
-                        dt_to_entry = (m_entry - m_curr) % (2.0 * math.pi) / n
-
-                        if 0.0 < dt_to_entry <= dt_sim:
-                            step_dt = dt_to_entry
-                            self.time_warp = 1.0
-                            self.warp_mode = WarpMode.PHYSICS
-
-                new_pos, new_vel = propagate_kepler(
+                # Compute exact time to atmospheric / surface boundary interception
+                dt_to_entry = calculate_time_to_entry(
                     self.vehicle.position,
                     self.vehicle.velocity,
                     self.body,
-                    step_dt,
+                    r_atm,
                 )
-                self.vehicle.position = new_pos
-                self.vehicle.velocity = new_vel
+
+                if dt_to_entry <= 0.0:
+                    step_dt = 0.0
+                    self.time_warp = 1.0
+                    self.warp_mode = WarpMode.PHYSICS
+                elif dt_to_entry <= dt_sim:
+                    step_dt = dt_to_entry
+                    self.time_warp = 1.0
+                    self.warp_mode = WarpMode.PHYSICS
+                else:
+                    step_dt = dt_sim
+
+                if step_dt > 0.0:
+                    new_pos, new_vel = propagate_kepler(
+                        self.vehicle.position,
+                        self.vehicle.velocity,
+                        self.body,
+                        step_dt,
+                    )
+                    self.vehicle.position = new_pos
+                    self.vehicle.velocity = new_vel
+                    self.vehicle.time += step_dt
 
                 # Attitude hold / orbital reference alignment
                 if self.vehicle.autopilot.mode == SASMode.PROGRADE:
@@ -270,16 +261,14 @@ class Simulation:
                 else:
                     self.vehicle.angular_velocity = 0.0
 
-                self.vehicle.time += step_dt
-
-                # Safety warp-drop check:
-                # If periapsis intersects atmosphere and vehicle has reached or crossed into atmosphere
-                alt = self.vehicle.altitude
-                cutoff = self.cutoff_altitude
-                orbit = calculate_orbit(self.vehicle.position, self.vehicle.velocity, self.body)
-                r_atm = self.body.radius + cutoff
-
-                if orbit.periapsis_radius < r_atm and alt <= (cutoff + 1e-4):
+                # Evaluate surface boundary touchdown / impact on airless bodies or ground contact
+                alt = self.body.altitude(self.vehicle.position)
+                if alt <= 0.0 or (self.cutoff_altitude == 0.0 and alt <= 1e-3):
+                    self.time_warp = 1.0
+                    self.warp_mode = WarpMode.PHYSICS
+                    if self.vehicle.state == VehicleState.IN_FLIGHT:
+                        self.vehicle._handle_ground_collision()
+                elif alt <= (cutoff + 1e-4):
                     self.time_warp = 1.0
                     self.warp_mode = WarpMode.PHYSICS
 

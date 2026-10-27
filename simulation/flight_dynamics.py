@@ -552,6 +552,33 @@ class FlightVehicle:
 
         return np.array([vel.x, vel.y, a_x, a_y, omega, alpha], dtype=np.float64)
 
+    def _handle_ground_collision(self) -> None:
+        """Evaluate ground collision / touchdown boundary conditions."""
+        r_hat = self.position.normalized()
+        self.position = r_hat * self.body.radius
+        v_surface = self.body.wind_velocity_at(self.position)
+        v_rel = (self.velocity - v_surface).magnitude()
+        omega_p = self._get_planet_omega()
+
+        # Attitude deviation from surface vertical
+        vert_angle = math.atan2(self.position.y, self.position.x)
+        att_deviation = abs(wrap_angle_pi(self.attitude - vert_angle))
+
+        if (
+            v_rel > self.crash_velocity_limit
+            or att_deviation > math.radians(self.crash_attitude_limit_deg)
+        ):
+            self.state = VehicleState.DESTROYED
+            self.velocity = Vector2D(0.0, 0.0)
+            self.angular_velocity = 0.0
+            self.shutdown()
+        else:
+            self.state = VehicleState.LANDED
+            self.velocity = v_surface
+            self.angular_velocity = omega_p
+            self.attitude = vert_angle
+            self.shutdown()
+
     # --- Simulation Step ---
 
     def step(
@@ -692,31 +719,8 @@ class FlightVehicle:
             self.angular_velocity = float(next_s[5])
 
             # 4. Ground collision / touchdown check
-            alt_new = self.altitude
-            if alt_new <= 0.0:
-                r_hat = self.position.normalized()
-                self.position = r_hat * self.body.radius
-                v_surface = self.body.wind_velocity_at(self.position)
-                v_rel = (self.velocity - v_surface).magnitude()
-
-                # Attitude deviation from surface vertical
-                vert_angle = math.atan2(self.position.y, self.position.x)
-                att_deviation = abs(wrap_angle_pi(self.attitude - vert_angle))
-
-                if (
-                    v_rel > self.crash_velocity_limit
-                    or att_deviation > math.radians(self.crash_attitude_limit_deg)
-                ):
-                    self.state = VehicleState.DESTROYED
-                    self.velocity = Vector2D(0.0, 0.0)
-                    self.angular_velocity = 0.0
-                    self.shutdown()
-                else:
-                    self.state = VehicleState.LANDED
-                    self.velocity = v_surface
-                    self.angular_velocity = omega_p
-                    self.attitude = vert_angle
-                    self.shutdown()
+            if self.altitude <= 0.0:
+                self._handle_ground_collision()
 
         elif self.state == VehicleState.LANDED:
             # Co-rotate with planetary surface

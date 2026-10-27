@@ -755,9 +755,212 @@ def propagate_kepler(
         return body.position + r_rel, body.velocity + v_rel
 
 
+def calculate_time_to_entry(
+    pos: Vector2D,
+    vel: Vector2D,
+    body: CelestialBody,
+    r_atm: float,
+) -> float:
+    """Calculate the remaining flight time until the spacecraft intercepts r = r_atm.
+
+    Parameters
+    ----------
+    pos : Vector2D
+        Inertial spacecraft position vector [m].
+    vel : Vector2D
+        Inertial spacecraft velocity vector [m/s].
+    body : CelestialBody
+        Central celestial body.
+    r_atm : float
+        Atmospheric or surface cutoff boundary radius [m] (R_body + cutoff_altitude).
+
+    Returns
+    -------
+    float
+        Time until entry in seconds [s], 0.0 if already at/inside boundary,
+        or float('inf') if the trajectory never intercepts r_atm.
+    """
+    if not isinstance(pos, Vector2D):
+        pos = Vector2D.from_tuple(pos)
+    if not isinstance(vel, Vector2D):
+        vel = Vector2D.from_tuple(vel)
+
+    r_vec = pos - body.position
+    v_vec = vel - body.velocity
+    r0 = r_vec.magnitude()
+
+    # 1. Already at or inside the atmospheric/surface boundary
+    if r0 <= (r_atm + 1e-7):
+        return 0.0
+
+    mu = float(np.float64(body.mu))
+    r_dot_v = float(np.float64(r_vec.dot(v_vec)))
+    v_sq = float(np.float64(v_vec.magnitude_squared()))
+    h_scalar = float(np.float64(r_vec.cross(v_vec)))
+    abs_h = abs(h_scalar)
+
+    u_pot = mu / r0
+    energy = float(np.float64(0.5 * v_sq - u_pot))
+    is_parabolic = math.isclose(0.5 * v_sq, u_pot, rel_tol=1e-7)
+    is_rectilinear = abs_h < 1e-12 * math.sqrt(mu * r0)
+
+    # =========================================================================
+    # RECTILINEAR TRAJECTORIES (h == 0)
+    # =========================================================================
+    if is_rectilinear:
+        # Outbound motion on open orbits never returns
+        if r_dot_v >= 0.0 and (is_parabolic or energy > 0.0):
+            return float("inf")
+
+        if is_parabolic:
+            # 2/3 * (r0^1.5 - r_atm^1.5) = sqrt(2*mu) * dt
+            if r_dot_v < 0.0:
+                delta = max(0.0, (r0 ** 1.5) - (r_atm ** 1.5))
+                return float(np.float64((2.0 / 3.0) * delta / math.sqrt(2.0 * mu)))
+            return float("inf")
+
+        if energy > 0.0:
+            abs_a = mu / (2.0 * energy)
+            n_h = math.sqrt(mu / (abs_a ** 3))
+            if r_dot_v >= 0.0:
+                return float("inf")
+            h_curr = -math.acosh(max(1.0, 1.0 + r0 / abs_a))
+            h_entry = -math.acosh(max(1.0, 1.0 + r_atm / abs_a))
+            m_h_curr = math.sinh(h_curr) - h_curr
+            m_h_entry = math.sinh(h_entry) - h_entry
+            if m_h_curr >= m_h_entry:
+                return 0.0
+            return float(np.float64((m_h_entry - m_h_curr) / n_h))
+
+        # Bound rectilinear ellipse (energy < 0)
+        semi_major_axis = -mu / (2.0 * energy)
+        r_a = 2.0 * semi_major_axis
+        if r_a < r_atm:
+            return 0.0  # Entire orbit inside atmosphere
+
+        n = math.sqrt(mu / (semi_major_axis ** 3))
+        # Entry occurs on inbound arc
+        cos_e_entry = max(-1.0, min(1.0, 1.0 - r_atm / semi_major_axis))
+        e_entry = 2.0 * math.pi - math.acos(cos_e_entry)
+        m_entry = e_entry - math.sin(e_entry)
+
+        cos_e_curr = max(-1.0, min(1.0, 1.0 - r0 / semi_major_axis))
+        if r_dot_v >= 0.0:
+            e_curr = math.acos(cos_e_curr)
+        else:
+            e_curr = 2.0 * math.pi - math.acos(cos_e_curr)
+        m_curr = e_curr - math.sin(e_curr)
+
+        if r_dot_v < 0.0:
+            if m_curr >= m_entry:
+                return 0.0
+            delta_m = m_entry - m_curr
+        else:
+            delta_m = (m_entry - m_curr) % (2.0 * math.pi)
+        return float(np.float64(delta_m / n))
+
+    # =========================================================================
+    # PLANAR TRAJECTORIES (h != 0)
+    # =========================================================================
+
+    # --- 1. Parabolic Trajectory (|epsilon| / (mu/r) < 1e-7) ---
+    if is_parabolic:
+        p_semi = (abs_h * abs_h) / mu
+        r_p = 0.5 * p_semi
+        if r_p >= r_atm:
+            return float("inf")  # Misses atmosphere
+        if r_dot_v >= 0.0:
+            return float("inf")  # Escaping outward
+
+        x_entry = -math.sqrt(max(0.0, 2.0 * r_atm / p_semi - 1.0))
+        b_entry = 0.5 * (x_entry + (1.0 / 3.0) * (x_entry ** 3))
+
+        x_curr = r_dot_v / abs_h
+        b_curr = 0.5 * (x_curr + (1.0 / 3.0) * (x_curr ** 3))
+
+        if b_curr >= b_entry:
+            return 0.0
+        delta_b = b_entry - b_curr
+        factor = math.sqrt(mu / (p_semi ** 3))
+        return float(np.float64(delta_b / factor))
+
+    # --- 2. Hyperbolic Trajectory (energy > 0) ---
+    if energy > 0.0:
+        abs_a = mu / (2.0 * energy)
+        n_h = math.sqrt(mu / (abs_a ** 3))
+
+        # Eccentricity
+        coeff_r = v_sq - u_pot
+        e_vec = (r_vec * coeff_r - v_vec * r_dot_v) / mu
+        e = float(np.float64(e_vec.magnitude()))
+
+        r_p = abs_a * (e - 1.0)
+        if r_p >= r_atm:
+            return float("inf")  # Misses atmosphere
+        if r_dot_v >= 0.0:
+            return float("inf")  # Outbound on departure asymptote
+
+        # Entry hyperbolic anomaly H_entry < 0
+        cosh_h_entry = (1.0 + r_atm / abs_a) / e
+        h_entry = -math.acosh(max(1.0, cosh_h_entry))
+        m_h_entry = e * math.sinh(h_entry) - h_entry
+
+        # Current hyperbolic anomaly H_curr < 0
+        tanh_h0 = r_dot_v / (math.sqrt(mu * abs_a) * (1.0 + r0 / abs_a))
+        tanh_h0_clamped = max(-0.999999999999, min(0.999999999999, tanh_h0))
+        h_curr = math.atanh(tanh_h0_clamped)
+        m_h_curr = e * math.sinh(h_curr) - h_curr
+
+        if m_h_curr >= m_h_entry:
+            return 0.0
+        return float(np.float64((m_h_entry - m_h_curr) / n_h))
+
+    # --- 3. Elliptic / Circular Trajectory (energy < 0) ---
+    semi_major_axis = -mu / (2.0 * energy)
+    n = math.sqrt(mu / (semi_major_axis ** 3))
+
+    coeff_r = v_sq - u_pot
+    e_vec = (r_vec * coeff_r - v_vec * r_dot_v) / mu
+    e = float(np.float64(e_vec.magnitude()))
+
+    r_p = semi_major_axis * (1.0 - e)
+    r_a = semi_major_axis * (1.0 + e)
+
+    if r_p >= r_atm:
+        return float("inf")  # Periapsis above atmosphere
+    if r_a <= r_atm:
+        return 0.0  # Entire orbit below atmosphere
+
+    # Entry eccentric anomaly E_entry in [pi, 2*pi)
+    if e < 1e-12:
+        return 0.0
+
+    cos_e_entry = max(-1.0, min(1.0, (1.0 - r_atm / semi_major_axis) / e))
+    e_entry = 2.0 * math.pi - math.acos(cos_e_entry)
+    m_entry = e_entry - e * math.sin(e_entry)
+
+    # Current eccentric anomaly E_curr
+    cos_e_curr = max(-1.0, min(1.0, (1.0 - r0 / semi_major_axis) / e))
+    sin_e_curr = r_dot_v / (e * math.sqrt(mu * semi_major_axis))
+    e_curr = math.atan2(sin_e_curr, cos_e_curr) % (2.0 * math.pi)
+    m_curr = e_curr - e * math.sin(e_curr)
+
+    # Inbound approach: direct difference, strictly avoiding modulo 2*pi wrap-around
+    if r_dot_v < 0.0:
+        if m_curr >= m_entry:
+            return 0.0
+        delta_m = m_entry - m_curr
+    else:
+        # Outbound: vehicle must pass apoapsis first
+        delta_m = (m_entry - m_curr) % (2.0 * math.pi)
+
+    return float(np.float64(delta_m / n))
+
+
 __all__ = [
     "Orbit",
     "calculate_orbit",
+    "calculate_time_to_entry",
     "propagate_kepler",
     "solve_kepler_barker",
     "solve_kepler_elliptic",

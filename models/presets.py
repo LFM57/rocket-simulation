@@ -102,6 +102,7 @@ def create_falcon_9() -> Rocket:
         current_gimbal=0.0,
         throttle=1.0,
         is_ignited=False,
+        is_enclosed=True,
     )
 
     # Stage 2 Propellant Tank

@@ -52,6 +52,7 @@ class Part:
     length: float
     radius: float
     position_offset: float = 0.0
+    is_enclosed: bool = False
 
     def __post_init__(self) -> None:
         """Enforce 64-bit floating-point precision and physical bounds."""
@@ -59,6 +60,7 @@ class Part:
         self.length = float(np.float64(self.length))
         self.radius = float(np.float64(self.radius))
         self.position_offset = float(np.float64(self.position_offset))
+        self.is_enclosed = bool(self.is_enclosed)
 
         if self.dry_mass < 0.0:
             raise ValueError(f"Dry mass cannot be negative, got {self.dry_mass}")
@@ -75,6 +77,8 @@ class Part:
     @property
     def projected_area(self) -> float:
         """Projected lateral aerodynamic area A = 2 * r * L [m^2]."""
+        if self.is_enclosed:
+            return 0.0
         return float(np.float64(2.0 * self.radius * self.length))
 
     def local_moment_of_inertia(self) -> float:
@@ -103,6 +107,7 @@ class Part:
             "length": self.length,
             "radius": self.radius,
             "position_offset": self.position_offset,
+            "is_enclosed": self.is_enclosed,
         }
 
     @classmethod
@@ -120,6 +125,7 @@ class Part:
             length=float(data["length"]),
             radius=float(data["radius"]),
             position_offset=float(data.get("position_offset", 0.0)),
+            is_enclosed=bool(data.get("is_enclosed", False)),
         )
 
 
@@ -212,6 +218,7 @@ class FuelTank(Part):
             length=float(data["length"]),
             radius=float(data["radius"]),
             position_offset=float(data.get("position_offset", 0.0)),
+            is_enclosed=bool(data.get("is_enclosed", False)),
             propellant_mass=float(data.get("propellant_mass", 0.0)),
             propellant_capacity=float(data.get("propellant_capacity", 0.0)),
         )
@@ -370,6 +377,7 @@ class Engine(Part):
             length=float(data["length"]),
             radius=float(data["radius"]),
             position_offset=float(data.get("position_offset", 0.0)),
+            is_enclosed=bool(data.get("is_enclosed", False)),
             thrust_vac=float(data.get("thrust_vac", 0.0)),
             thrust_sl=float(data.get("thrust_sl", 0.0)),
             isp_vac=float(data.get("isp_vac", 0.0)),
@@ -418,6 +426,7 @@ class Decoupler(Part):
             length=float(data["length"]),
             radius=float(data["radius"]),
             position_offset=float(data.get("position_offset", 0.0)),
+            is_enclosed=bool(data.get("is_enclosed", False)),
             separation_impulse=float(data.get("separation_impulse", 0.0)),
         )
 
@@ -440,6 +449,7 @@ class Payload(Part):
             length=float(data["length"]),
             radius=float(data["radius"]),
             position_offset=float(data.get("position_offset", 0.0)),
+            is_enclosed=bool(data.get("is_enclosed", False)),
         )
 
 

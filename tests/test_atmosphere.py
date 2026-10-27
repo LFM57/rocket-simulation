@@ -633,7 +633,7 @@ def test_cross_flow_drag_scaling():
     expected_f90 = -v_rel.normalized() * (aero_90.dynamic_pressure * ref_area * cd_tr)
     assert aero_90.force.is_close(expected_f90, rtol=1e-6)
 
-    # alpha = 45 deg -> cd = (cd_ax + cd_tr) / 2
+    # alpha = 45 deg -> axial force + cross-flow normal force (Allen-Perkins)
     aero_45 = calculate_aero_forces(
         craft_pos=pos,
         craft_vel=craft_vel,
@@ -643,19 +643,28 @@ def test_cross_flow_drag_scaling():
         cd_axial=cd_ax,
         cd_transverse=cd_tr,
     )
-    cd_45 = 0.5 * (cd_ax + cd_tr)
-    expected_f45 = -v_rel.normalized() * (aero_45.dynamic_pressure * ref_area * cd_45)
+    u_45 = Vector2D(math.cos(math.pi / 4.0), math.sin(math.pi / 4.0))
+    n_45 = Vector2D(-math.sin(math.pi / 4.0), math.cos(math.pi / 4.0))
+    q_45 = aero_45.dynamic_pressure
+    f_ax = -u_45 * (q_45 * ref_area * cd_ax * 0.5)
+    f_tr = n_45 * (q_45 * ref_area * cd_tr * 0.5)
+    expected_f45 = f_ax + f_tr
     assert aero_45.force.is_close(expected_f45, rtol=1e-6)
 
 
 def test_lift_force_and_coefficient():
     """Verify lift force and lift coefficient functions."""
-    # Lift coefficient: C_L = cl_alpha * sin(2*alpha)
+    # Lift coefficient: C_L = 0.5 * cl_alpha * sin(2*alpha), dC_L/d(alpha)|_0 = cl_alpha
     cl_slope = 2.0 * math.pi
     assert math.isclose(lift_coefficient(0.0, cl_slope), 0.0, abs_tol=1e-12)
-    assert math.isclose(lift_coefficient(math.pi / 4.0, cl_slope), cl_slope, rel_tol=1e-12)
-    assert math.isclose(lift_coefficient(-math.pi / 4.0, cl_slope), -cl_slope, rel_tol=1e-12)
+    assert math.isclose(lift_coefficient(math.pi / 4.0, cl_slope), 0.5 * cl_slope, rel_tol=1e-12)
+    assert math.isclose(lift_coefficient(-math.pi / 4.0, cl_slope), -0.5 * cl_slope, rel_tol=1e-12)
     assert math.isclose(lift_coefficient(math.pi / 2.0, cl_slope), 0.0, abs_tol=1e-12)
+
+    # Numerical slope at alpha = 0 matches cl_slope
+    d_alpha = 1e-6
+    num_slope = (lift_coefficient(d_alpha, cl_slope) - lift_coefficient(-d_alpha, cl_slope)) / (2.0 * d_alpha)
+    assert math.isclose(num_slope, cl_slope, rel_tol=1e-6)
 
     # Lift force perpendicular to flow
     q = 500.0

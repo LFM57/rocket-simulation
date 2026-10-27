@@ -165,14 +165,15 @@ def lift_coefficient(angle_of_attack: float, cl_alpha: float = 2.0 * math.pi) ->
     """Compute slender-body / thin-airfoil lift coefficient.
 
     Equation:
-        C_L(alpha) = cl_alpha * sin(2 * alpha)
+        C_L(alpha) = 0.5 * cl_alpha * sin(2 * alpha)
+    Satisfies dC_L / d(alpha) = cl_alpha at alpha = 0.
 
     Parameters
     ----------
     angle_of_attack : float
         Angle of attack in radians [rad].
     cl_alpha : float, default=2*pi
-        Lift curve slope dC_L / d(alpha).
+        Lift curve slope dC_L / d(alpha) at alpha = 0 [1/rad].
 
     Returns
     -------
@@ -181,7 +182,7 @@ def lift_coefficient(angle_of_attack: float, cl_alpha: float = 2.0 * math.pi) ->
     """
     alpha = float(np.float64(angle_of_attack))
     slope = float(np.float64(cl_alpha))
-    return float(np.float64(slope * math.sin(2.0 * alpha)))
+    return float(np.float64(0.5 * slope * math.sin(2.0 * alpha)))
 
 
 def drag_force(
@@ -349,34 +350,38 @@ def calculate_aero_forces(
     q = dynamic_pressure(rho, v_rel_mag)
     mach = mach_number(v_rel_mag, a_sound)
 
-    # 3. Heading vector: u_hat = (cos theta, sin theta)
+    # 3. Heading and lateral normal unit vectors
     theta = float(np.float64(attitude_angle))
     u_hat = Vector2D(math.cos(theta), math.sin(theta))
+    n_hat = Vector2D(-math.sin(theta), math.cos(theta))
 
     # 4. Angle of attack alpha: signed angle from v_rel to u_hat
     v_rel_hat = v_rel / v_rel_mag
+    v_rel_perp = Vector2D(-v_rel_hat.y, v_rel_hat.x)
     sin_alpha = v_rel_hat.cross(u_hat)
     cos_alpha = v_rel_hat.dot(u_hat)
     alpha = float(np.float64(math.atan2(sin_alpha, cos_alpha)))
 
-    # 5. Effective cross-flow drag: axial area A_ref vs lateral planform area A_trans
-    cos_a_sq = math.cos(alpha) ** 2
-    sin_a_sq = math.sin(alpha) ** 2
     a_trans = transverse_area if transverse_area is not None else reference_area
 
-    f_drag_mag = q * (cd_axial * reference_area * cos_a_sq + cd_transverse * a_trans * sin_a_sq)
+    # 5. Axial force along longitudinal body axis -u_hat
+    f_axial_mag = q * reference_area * cd_axial * cos_alpha * abs(cos_alpha)
+    f_axial = -u_hat * float(np.float64(f_axial_mag))
 
-    # 6. Total aerodynamic drag force (opposes relative flow)
-    f_drag = -v_rel_hat * float(np.float64(f_drag_mag))
+    # 6. Cross-flow normal force: Allen-Perkins viscous cross-flow along body normal n_hat
+    f_cross_mag = q * a_trans * cd_transverse * abs(sin_alpha) * sin_alpha
+    f_crossflow = n_hat * float(np.float64(f_cross_mag))
 
-    total_force = f_drag
+    # 7. Potential slender-body lift: along v_rel_perp
     if not math.isclose(cl_alpha, 0.0, abs_tol=1e-15):
-        cl = float(np.float64(cl_alpha * math.sin(2.0 * alpha)))
-        v_rel_perp = Vector2D(-v_rel_hat.y, v_rel_hat.x)
-        f_lift = v_rel_perp * float(np.float64(q * reference_area * cl))
-        total_force = f_drag + f_lift
+        cl = lift_coefficient(alpha, cl_alpha)
+        f_potential = v_rel_perp * float(np.float64(q * reference_area * cl))
+    else:
+        f_potential = Vector2D(0.0, 0.0)
 
-    # 7. Aerodynamic torque around Center of Mass:
+    total_force = f_axial + f_crossflow + f_potential
+
+    # 8. Aerodynamic torque around Center of Mass:
     # r_CoP - r_CoM = (center_of_pressure_offset - center_of_mass_offset) * u_hat
     cop_com_delta = float(np.float64(center_of_pressure_offset - center_of_mass_offset))
     r_arm = u_hat * cop_com_delta

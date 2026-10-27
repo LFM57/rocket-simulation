@@ -336,13 +336,29 @@ class FlightVehicle:
         return 1.0
 
     def _get_transverse_area(self) -> float:
-        """Compute lateral planform aerodynamic area A_trans = sum(2 * r * L) [m^2]."""
-        total_lat = sum(
-            p.projected_area
-            for s in self.rocket.stages
-            if not s.is_separated
-            for p in s.parts
-        )
+        """Compute lateral planform aerodynamic area clamped to outer mold line [m^2]."""
+        total_lat = 0.0
+        for s in self.rocket.stages:
+            if s.is_separated:
+                continue
+            stage_radius = max((p.radius for p in s.parts if not getattr(p, "is_enclosed", False)), default=0.0)
+            stage_diameter = 2.0 * stage_radius
+
+            axial_groups: dict[float, list[Part]] = {}
+            for part in s.parts:
+                if getattr(part, "is_enclosed", False) or part.projected_area <= 0.0:
+                    continue
+                pos = round(part.position_offset, 3)
+                axial_groups.setdefault(pos, []).append(part)
+
+            for pos, parts in axial_groups.items():
+                if len(parts) > 1 and stage_diameter > 0.0:
+                    max_len = max(p.length for p in parts)
+                    eff_width = min(sum(2.0 * p.radius for p in parts), stage_diameter)
+                    total_lat += eff_width * max_len
+                else:
+                    total_lat += sum(p.projected_area for p in parts)
+
         return float(np.float64(total_lat if total_lat > 0.0 else self._get_reference_area()))
 
     def _get_total_length(self) -> float:

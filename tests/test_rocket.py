@@ -659,3 +659,30 @@ def test_center_of_pressure_calculation():
     # Expected CoP: (4.0 * 2.0 + 12.0 * 8.0) / (4.0 + 12.0) = (8.0 + 96.0) / 16.0 = 104 / 16 = 6.5 m
     expected_cop = (4.0 * 2.0 + 12.0 * 8.0) / 16.0
     assert math.isclose(rocket.center_of_pressure(), expected_cop, rel_tol=1e-12)
+
+
+def test_engine_cluster_clamping_and_enclosed_parts():
+    """Verify that parallel engine clusters clamp to stage diameter and enclosed parts are excluded."""
+    # Main stage cylinder: radius = 2.0 (diameter = 4.0), length = 20.0, offset = 10.0
+    tank = Part("tank", "Tank", dry_mass=1000.0, length=20.0, radius=2.0, position_offset=10.0)
+    # 4 engines sharing the same axial station: offset = 1.0, length = 2.0, radius = 0.8
+    # sum of widths = 4 * 1.6 = 6.4 > stage diameter 4.0 -> clamped to 4.0
+    engines = [
+        Part(f"eng_{i}", f"Eng {i}", dry_mass=100.0, length=2.0, radius=0.8, position_offset=1.0)
+        for i in range(4)
+    ]
+    # Enclosed upper-stage engine: offset = 15.0, length = 3.0, radius = 1.5, is_enclosed = True
+    enclosed_eng = Part("enc_eng", "Enclosed Eng", dry_mass=200.0, length=3.0, radius=1.5, position_offset=15.0, is_enclosed=True)
+
+    stage = Stage("s1", "Stage 1", parts=[tank, *engines, enclosed_eng], position_offset=0.0)
+    rocket = Rocket("Test Cluster Rocket", stages=[stage])
+
+    # Tank area: 2 * 2.0 * 20.0 = 80.0 at y = 10.0
+    # Clamped engine cluster area: diameter (4.0) * length (2.0) = 8.0 at y = 1.0
+    # Enclosed engine area: 0.0
+    # Total area: 88.0
+    # Weighted sum: 80.0 * 10.0 + 8.0 * 1.0 = 808.0
+    # Expected CoP: 808.0 / 88.0 = 9.181818...
+    expected_cop = (80.0 * 10.0 + 8.0 * 1.0) / 88.0
+    assert math.isclose(rocket.center_of_pressure(), expected_cop, rel_tol=1e-6)
+

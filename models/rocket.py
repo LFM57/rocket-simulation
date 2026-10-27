@@ -267,9 +267,11 @@ class Rocket:
     def center_of_pressure(self) -> float:
         """Compute area-weighted aerodynamic center of pressure along centerline [m].
 
+        Clamps parallel clusters sharing the same axial station to stage outer diameter,
+        and excludes enclosed internal components.
+
         Equation:
             y_CoP = sum(A_i * y_i) / sum(A_i)
-        where A_i = 2 * r_i * L_i is the lateral projected area.
 
         Returns
         -------
@@ -283,11 +285,32 @@ class Rocket:
             if stage.is_separated:
                 continue
             stage_base = stage.position_offset
+            stage_radius = max((p.radius for p in stage.parts if not getattr(p, "is_enclosed", False)), default=0.0)
+            stage_diameter = 2.0 * stage_radius
+
+            # Group exposed parts by axial position to detect lateral clusters
+            axial_groups: dict[float, list[Part]] = {}
             for part in stage.parts:
-                a_i = part.projected_area
-                y_i = stage_base + part.position_offset
-                weighted_sum += a_i * y_i
-                total_area += a_i
+                if getattr(part, "is_enclosed", False) or part.projected_area <= 0.0:
+                    continue
+                pos = round(part.position_offset, 3)
+                axial_groups.setdefault(pos, []).append(part)
+
+            for pos, parts in axial_groups.items():
+                y_i = stage_base + pos
+                if len(parts) > 1 and stage_diameter > 0.0:
+                    # Parallel cluster: clamp combined width to stage outer diameter
+                    max_len = max(p.length for p in parts)
+                    sum_width = sum(2.0 * p.radius for p in parts)
+                    eff_width = min(sum_width, stage_diameter)
+                    cluster_area = eff_width * max_len
+                    weighted_sum += cluster_area * y_i
+                    total_area += cluster_area
+                else:
+                    for part in parts:
+                        a_i = part.projected_area
+                        weighted_sum += a_i * y_i
+                        total_area += a_i
 
         if total_area <= 0.0:
             return 0.0
@@ -481,6 +504,8 @@ class Rocket:
 
         if next_stage is not None:
             next_stage.is_active = True
+            for p in next_stage.parts:
+                p.is_enclosed = False
             self.active_stage_index = next_idx
         else:
             # Advance past stages

@@ -92,11 +92,19 @@ class TelemetryLogger:
         bool
             True if the snapshot was recorded, False if skipped due to sampling interval.
         """
-        # Maintain cumulative Delta-V via numerical Riemann integration: dV = (T / m) * dt
-        if self._prev_snapshot is not None:
+        # Maintain cumulative Delta-V via sub-step tracking or Riemann fallback
+        snap_dv = getattr(snapshot, "delta_v_expended", 0.0)
+        if snap_dv > 0.0:
+            self._delta_v_expended = float(snap_dv)
+        elif self._prev_snapshot is not None:
             dt = snapshot.time - self._prev_snapshot.time
             if dt > 0.0:
-                m_mid = 0.5 * (self._prev_snapshot.mass + snapshot.mass)
+                prev_stage = getattr(self._prev_snapshot, "stage", None)
+                curr_stage = getattr(snapshot, "stage", None)
+                if prev_stage is not None and curr_stage is not None and prev_stage != curr_stage:
+                    m_mid = snapshot.mass
+                else:
+                    m_mid = 0.5 * (self._prev_snapshot.mass + snapshot.mass)
                 t_mid = 0.5 * (self._prev_snapshot.thrust + snapshot.thrust)
                 if m_mid > 0.0 and t_mid > 0.0:
                     self._delta_v_expended += (t_mid / m_mid) * dt

@@ -85,6 +85,7 @@ class TelemetrySnapshot:
     stage: int
     vehicle_state: Optional[Union[str, VehicleState]] = None
     local_pitch: float = 0.0
+    delta_v_expended: float = 0.0
 
     @property
     def state(self) -> Optional[Union[str, VehicleState]]:
@@ -232,7 +233,8 @@ class FlightVehicle:
         self._step_thrust_scale: float = 1.0
         self._firing_engines: list[Engine] = []
         self._last_step_thrust: Optional[float] = None
-        self._step_cache: Optional[tuple[float, float, float, float, float, float, float]] = None
+        self._step_cache: Optional[tuple[Any, ...]] = None
+        self._delta_v_expended: float = 0.0
 
     # --- Geometric Properties & Coordinate Conventions ---
 
@@ -741,6 +743,12 @@ class FlightVehicle:
             i_zz_end = self.rocket.moment_of_inertia()
             y_com_end = self.rocket.center_of_mass()
 
+            # Integrate expended delta_v on each sub-step
+            if actual_thrust > 0.0:
+                m_mid = 0.5 * (m_start + m_end)
+                if m_mid > 0.0:
+                    self._delta_v_expended += (actual_thrust / m_mid) * dt_val
+
             # Cache structural properties with time-varying mass across RK4 stages
             ref_area = self._get_reference_area()
             tot_length = self._get_total_length()
@@ -863,6 +871,7 @@ class FlightVehicle:
             stage=int(self.rocket.active_stage_index),
             vehicle_state=self.state,
             local_pitch=float(np.float64(self.local_pitch)),
+            delta_v_expended=float(np.float64(self._delta_v_expended)),
         )
 
 

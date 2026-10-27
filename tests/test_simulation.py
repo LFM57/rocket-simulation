@@ -504,3 +504,57 @@ def test_airless_body_impact_detection_on_rails():
     assert sim.warp_mode == WarpMode.PHYSICS
     assert sim.vehicle.state == VehicleState.DESTROYED
 
+
+def test_substep_burnout_delta_v_accuracy():
+    """Verify that delta_v_expended does not overestimate burnout impulse during sub-stepped macro-steps."""
+    from models.parts import Engine, FuelTank
+    from models.rocket import Rocket, Stage
+    from core.constants import g0
+    earth = get_earth()
+
+    # Engine: 100 kN thrust, 300 s Isp -> ~33.99 kg/s
+    eng = Engine(
+        id="eng",
+        name="Engine",
+        dry_mass=100.0,
+        length=1.0,
+        radius=0.5,
+        thrust_vac=100_000.0,
+        thrust_sl=100_000.0,
+        isp_vac=300.0,
+        isp_sl=300.0,
+        is_ignited=True,
+        throttle=1.0,
+    )
+    # Fuel for exactly 0.05 seconds = ~1.7 kg
+    tank = FuelTank(
+        id="tank",
+        name="Tank",
+        dry_mass=100.0,
+        length=2.0,
+        radius=0.5,
+        propellant_mass=1.7,
+        propellant_capacity=100.0,
+    )
+    stage = Stage(stage_id="s1", name="Stage 1", parts=[eng, tank])
+    rocket = Rocket(stages=[stage])
+
+    # Deep space vehicle
+    pos = Vector2D(0.0, 1e11)
+    vehicle = FlightVehicle(rocket, earth, pos, Vector2D(0.0, 0.0), state=VehicleState.IN_FLIGHT)
+    sim = Simulation(vehicle, earth, max_physics_substep=0.05)
+
+    # Macro step of wall_dt = 1.0 s -> 20 sub-steps of 0.05 s
+    # Fuel burns out on sub-step 1!
+    sim.step(wall_dt=1.0)
+
+    summary = sim.logger.get_summary()
+    dv_expended = summary["delta_v_expended"]
+
+    # Total theoretical delta_v is for ~1.7 kg burned from ~201.7 kg:
+    # dv ~= 300 * 9.80665 * ln(201.7 / 200.0) ~= 24.9 m/s
+    # The old bug integrated 0.5 * 100 kN across the full 1.0 s macro-step (~250 m/s, 10x too large!)
+    assert dv_expended < 40.0, f"Delta-v overestimated: {dv_expended:.1f} m/s"
+    assert dv_expended > 15.0
+
+

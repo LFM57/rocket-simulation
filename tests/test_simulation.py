@@ -558,3 +558,48 @@ def test_substep_burnout_delta_v_accuracy():
     assert dv_expended > 15.0
 
 
+def test_telemetry_max_g_force_includes_aerodynamics():
+    """Verify TelemetryLogger.get_summary()['max_g_force'] includes aerodynamic deceleration when thrust is zero."""
+    from models.parts import Part
+    from models.rocket import Rocket, Stage
+
+    earth = get_earth()
+    # Unpowered capsule (no engines, pure aerodynamic drag)
+    capsule = Part(
+        id="capsule",
+        name="Reentry Capsule",
+        dry_mass=1000.0,
+        length=3.0,
+        radius=1.5,
+    )
+    stage = Stage(stage_id="s1", name="Capsule Stage", parts=[capsule])
+    rocket = Rocket(stages=[stage])
+
+    # Reentering atmosphere at 15 km altitude with 1500 m/s speed
+    pos = Vector2D(0.0, earth.radius + 15000.0)
+    vel = Vector2D(1500.0, 0.0)
+    vehicle = FlightVehicle(
+        rocket=rocket,
+        body=earth,
+        position=pos,
+        velocity=vel,
+        attitude=0.0,
+        state=VehicleState.IN_FLIGHT,
+        cd_axial=0.8,
+    )
+    sim = Simulation(vehicle, earth)
+
+    # Step simulation
+    snap = sim.step(wall_dt=0.1)
+
+    assert snap.thrust == 0.0
+    # At 15 km with 1500 m/s, dynamic pressure is substantial:
+    # Drag deceleration should produce > 1 g of aerodynamic force
+    assert snap.g_force > 1.0, f"Expected aerodynamic g_force > 1.0, got {snap.g_force}"
+
+    summary = sim.logger.get_summary()
+    assert summary["max_g_force"] == pytest.approx(snap.g_force, rel=1e-5)
+    assert summary["max_g_force"] > 1.0
+
+
+

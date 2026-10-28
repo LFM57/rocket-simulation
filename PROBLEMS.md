@@ -16,9 +16,11 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 | 2.3 | Spurious `CollisionWarning` Emitted While `ON_PAD` or `LANDED` | **DONE** | `ecdc141` |
 | 2.4 | Surface Co-Rotation Velocity Bug on Airless Rotating Bodies | **DONE** | `17d2bd6` |
 | 3.1 | `TelemetryLogger` Overestimates Expended $\Delta v$ on Sub-Stepped Burnout and Staging | **DONE** | `d65685e` |
-| 3.2 | `TelemetryLogger.get_summary()` Ignores Aerodynamic G-Forces | **TODO** | Open |
+| 3.2 | `TelemetryLogger.get_summary()` Ignores Aerodynamic G-Forces | **DONE** | Solved |
 | 3.3 | `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop | **TODO** | Open |
 | 3.4 | Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch | **TODO** | Open |
+| 3.5 | Missing `Part` import for static type checkers in `simulation/flight_dynamics.py` | **TODO** | Open |
+| 3.6 | Partial-burn liftoff check on `ON_PAD` | **TODO** | Open |
 
 ---
 
@@ -247,8 +249,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 3.2. [TODO] `TelemetryLogger.get_summary()` Ignores Aerodynamic G-Forces
-- **Status**: Open
+### 3.2. [DONE] `TelemetryLogger.get_summary()` Ignores Aerodynamic G-Forces
+- **Status**: Solved
 - **Severity**: Low / Medium
 - **Location**: `simulation/telemetry.py` (lines 232–235)
 - **Description**:
@@ -297,3 +299,10 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 - **Description**:
   1. `Decoupler` defines `separation_impulse: float = 0.0` (configured to `5000.0 N s` in `create_falcon_9()`), but neither `Rocket.stage()` nor `FlightVehicle.stage()` applies the impulse $\Delta v = J / m$ upon stage separation.
   2. The docstring of `Rocket.thrust_force_and_torque()` (line 346) states `tau_thrust = (y_engine - y_CoM) * (T * sin(delta))`, whereas the implementation (line 387) computes `total_tau += -arm * fx = -(y_eng - y_com) * (T * sin(delta))`.
+
+### 3.5 **Missing `Part` import for static type checkers in `simulation/flight_dynamics.py`**:
+
+Line 251 of `simulation/flight_dynamics.py` uses the type annotation `axial_groups: dict[float, list[Part]] = {}`, but only `Engine` is imported from `models.parts` on line 25 (`from models.parts import Engine`). Because `from __future__ import annotations` is active, Python does not fail at runtime, but `mypy`/`pyright` will flag `Part` as undefined unless changed to `from models.parts import Engine, Part`.
+
+### 3.6 **Partial-burn liftoff check on `ON_PAD` (`simulation/flight_dynamics.py:536-560`)**:
+If a rocket is `ON_PAD` with only a tiny trace of propellant left (enough for e.g. $0.01\text{ s}$ of thrust during a $1.0\text{ s}$ step), the `ON_PAD` liftoff check uses unscaled instantaneous thrust (`radial_thrust > weight`), transitions to `IN_FLIGHT`, and then immediately scales the step's thrust down to $1\%$ in `IN_FLIGHT`, causing the vehicle to sink below `altitude <= 0.0` and transition to `LANDED`. Scaling `f_thrust_vec` by `min(1.0, avail_prop / (total_mdot * dt_val))` during the `ON_PAD` check prevents liftoff when propellant cannot sustain $T > W$ across the step.

@@ -20,6 +20,7 @@ from typing import Optional, Sequence, Union
 
 import numpy as np
 
+from core.constants import g0
 from core.integrator import make_state, rk4_step, wrap_angle_pi
 from core.vector2d import Vector2D
 from models.parts import Engine
@@ -86,6 +87,7 @@ class TelemetrySnapshot:
     vehicle_state: Optional[Union[str, VehicleState]] = None
     local_pitch: float = 0.0
     delta_v_expended: float = 0.0
+    g_force: float = 0.0
 
     @property
     def state(self) -> Optional[Union[str, VehicleState]]:
@@ -856,6 +858,32 @@ class FlightVehicle:
                         t_val, _ = eng.get_thrust_and_mass_flow(p_ambient)
                         current_thrust += t_val
 
+        # Compute net non-gravitational acceleration magnitude ||F_thrust + F_aero|| / (m * g0)
+        f_thrust_vec = Vector2D(0.0, 0.0)
+        if (
+            self.state in (VehicleState.ON_PAD, VehicleState.IN_FLIGHT)
+            and self.rocket.active_stage is not None
+            and not self.rocket.active_stage.is_separated
+            and current_thrust > 0.0
+        ):
+            for eng in self.rocket.active_stage.engines:
+                if (eng.is_ignited and eng.throttle > 0.0) or (current_thrust > 0.0 and eng.throttle > 0.0):
+                    t_val, _ = eng.get_thrust_and_mass_flow(p_ambient, ignore_ignited=True)
+                    if t_val > 0.0:
+                        delta = eng.current_gimbal
+                        thrust_dir = self.attitude - delta
+                        f_thrust_vec += Vector2D(math.cos(thrust_dir), math.sin(thrust_dir)) * t_val
+            nom_mag = f_thrust_vec.magnitude()
+            if nom_mag > 0.0:
+                f_thrust_vec = f_thrust_vec * (current_thrust / nom_mag)
+            else:
+                thrust_dir = self.attitude
+                f_thrust_vec = Vector2D(math.cos(thrust_dir), math.sin(thrust_dir)) * current_thrust
+
+        total_mass = self.rocket.total_mass()
+        f_non_grav = f_thrust_vec + aero.force
+        g_force = float(f_non_grav.magnitude() / (total_mass * g0)) if total_mass > 0.0 else 0.0
+
         return TelemetrySnapshot(
             time=float(np.float64(self.time)),
             altitude=float(np.float64(alt_report)),
@@ -863,7 +891,7 @@ class FlightVehicle:
             mach=float(np.float64(aero.mach)),
             dynamic_pressure=float(np.float64(aero.dynamic_pressure)),
             thrust=float(np.float64(current_thrust)),
-            mass=float(np.float64(self.rocket.total_mass())),
+            mass=float(np.float64(total_mass)),
             pitch=float(np.float64(self.attitude)),
             angle_of_attack=float(np.float64(aero.angle_of_attack)),
             apoapsis=float(np.float64(orbit.apoapsis_altitude)),
@@ -872,6 +900,7 @@ class FlightVehicle:
             vehicle_state=self.state,
             local_pitch=float(np.float64(self.local_pitch)),
             delta_v_expended=float(np.float64(self._delta_v_expended)),
+            g_force=float(np.float64(g_force)),
         )
 
 

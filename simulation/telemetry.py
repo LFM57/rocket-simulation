@@ -145,6 +145,7 @@ class TelemetryLogger:
             "apoapsis": [float(s.apoapsis) for s in self._snapshots],
             "periapsis": [float(s.periapsis) for s in self._snapshots],
             "stage": [float(s.stage) for s in self._snapshots],
+            "g_force": [float(getattr(s, "g_force", 0.0)) for s in self._snapshots],
         }
 
     def to_csv(self, filepath: Union[str, Path]) -> None:
@@ -172,6 +173,7 @@ class TelemetryLogger:
             "periapsis",
             "stage",
             "vehicle_state",
+            "g_force",
         ]
 
         with open(path, mode="w", newline="", encoding="utf-8") as csvfile:
@@ -193,6 +195,7 @@ class TelemetryLogger:
                         "periapsis": f"{s.periapsis:.4f}",
                         "stage": s.stage,
                         "vehicle_state": str(getattr(s, "vehicle_state", "") or ""),
+                        "g_force": f"{getattr(s, 'g_force', 0.0):.4f}",
                     }
                 )
 
@@ -245,7 +248,12 @@ class TelemetryLogger:
                 max_q_time = float(s.time)
 
         max_g = max(
-            (s.thrust / (s.mass * g0) if s.mass > 0.0 else 0.0 for s in self._snapshots),
+            (
+                s.g_force
+                if hasattr(s, "g_force")
+                else (s.thrust / (s.mass * g0) if s.mass > 0.0 else 0.0)
+                for s in self._snapshots
+            ),
             default=0.0,
         )
 

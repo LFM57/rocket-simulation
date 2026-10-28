@@ -602,4 +602,29 @@ def test_telemetry_max_g_force_includes_aerodynamics():
     assert summary["max_g_force"] > 1.0
 
 
+def test_simulation_run_docstring_and_wall_dt_validation():
+    """Verify Simulation.run has a valid docstring and rejects wall_dt <= 0 with ValueError."""
+    from models.presets import create_falcon_9
+    earth = get_earth()
+    f9 = create_falcon_9()
+    vehicle = FlightVehicle(f9, earth, Vector2D(0.0, earth.radius), state=VehicleState.ON_PAD)
+    sim = Simulation(vehicle, earth)
+
+    # 1. Docstring must be present and valid
+    assert Simulation.run.__doc__ is not None
+    assert "Run the simulation for a specified simulation duration" in Simulation.run.__doc__
+
+    # 2. wall_dt <= 0 must raise ValueError to prevent infinite loop
+    with pytest.raises(ValueError, match="wall_dt must be positive"):
+        sim.run(duration=10.0, wall_dt=0.0)
+
+    with pytest.raises(ValueError, match="wall_dt must be positive"):
+        sim.run(duration=10.0, wall_dt=-0.1)
+
+    # 3. duration <= 0 should return empty list
+    assert sim.run(duration=0.0, wall_dt=0.1) == []
+    assert sim.run(duration=-5.0, wall_dt=0.1) == []
+
+
+
 

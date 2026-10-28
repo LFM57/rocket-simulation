@@ -285,10 +285,6 @@ class Simulation:
         target_pitch: Optional[float] = None,
         throttle: Optional[float] = None,
     ) -> list[TelemetrySnapshot]:
-        # Guard against freeze when simulation is paused (time_warp == 0)
-        if self.time_warp <= 1e-9:
-            snap = self.step(wall_dt, target_pitch=target_pitch, throttle=throttle)
-            return [snap]
         """Run the simulation for a specified simulation duration in seconds.
 
         Parameters
@@ -307,6 +303,15 @@ class Simulation:
         list[TelemetrySnapshot]
             Recorded telemetry snapshots during the run.
         """
+        if wall_dt <= 0.0:
+            raise ValueError(f"wall_dt must be positive (> 0), got {wall_dt}")
+        if duration <= 0.0:
+            return []
+
+        # Guard against freeze when simulation is paused (time_warp == 0)
+        if self.time_warp <= 1e-9:
+            snap = self.step(wall_dt, target_pitch=target_pitch, throttle=throttle)
+            return [snap]
         target_time = self.elapsed_time + duration
         recorded: list[TelemetrySnapshot] = []
 

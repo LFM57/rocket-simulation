@@ -17,7 +17,7 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 | 2.4 | Surface Co-Rotation Velocity Bug on Airless Rotating Bodies | **DONE** | `17d2bd6` |
 | 3.1 | `TelemetryLogger` Overestimates Expended $\Delta v$ on Sub-Stepped Burnout and Staging | **DONE** | `d65685e` |
 | 3.2 | `TelemetryLogger.get_summary()` Ignores Aerodynamic G-Forces | **DONE** | Solved |
-| 3.3 | `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop | **TODO** | Open |
+| 3.3 | `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop | **DONE** | Solved |
 | 3.4 | Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch | **TODO** | Open |
 | 3.5 | Missing `Part` import for static type checkers in `simulation/flight_dynamics.py` | **TODO** | Open |
 | 3.6 | Partial-burn liftoff check on `ON_PAD` | **TODO** | Open |
@@ -266,8 +266,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 3.3. [TODO] `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop
-- **Status**: Open
+### 3.3. [DONE] `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop
+- **Status**: Solved
 - **Severity**: Low
 - **Location**: `simulation/simulation.py` (lines 269–299)
 - **Description**:

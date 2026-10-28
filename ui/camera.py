@@ -149,10 +149,8 @@ class Camera:
         if dt_val <= 0.0:
             return
 
-        # 1. Smooth position tracking
-        p_factor = 1.0 - math.exp(-self.position_smoothing * dt_val)
-        delta_p = self.target_position - self.position
-        self.position = self.position + delta_p * p_factor
+        # 1. Exact position tracking (eliminates steady-state velocity lag Delta_r = v / k)
+        self.position = self.target_position
 
         # 2. Smooth zoom interpolation (exponential in log-space)
         z_factor = 1.0 - math.exp(-self.zoom_smoothing * dt_val)

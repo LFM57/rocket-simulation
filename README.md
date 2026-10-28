@@ -16,7 +16,7 @@ An interactive, high-precision **2D Aerospace & Orbital Mechanics Flight Simulat
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/your-username/rocket-simulation.git
+   git clone https://github.com/LFM57/rocket-simulation.git
    cd "Rocket Simulation"
    ```
 

@@ -31,7 +31,7 @@ from models.parts import (
 Scalar = Union[int, float, np.floating, np.integer]
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, eq=False)
 class Stage:
     """A single rocket stage containing component parts.
 
@@ -141,7 +141,7 @@ class Stage:
         )
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, eq=False)
 class Rocket:
     """Modular multi-stage rocket vehicle representation.
 

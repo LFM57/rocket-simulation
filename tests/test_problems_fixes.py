@@ -122,6 +122,53 @@ def test_vab_multi_engine_cluster_offsets(pygame_surface):
     assert 0.0 in offsets  # Center engine
 
 
+def test_vab_render_headless_and_part_hashability(pygame_surface):
+    """Verify VAB renders blueprint canvas headlessly and Part/Engine objects are hashable dict keys."""
+    vab = VABView(surface=pygame_surface)
+
+    # Must render blueprint canvas without TypeError on unhashable Engine
+    vab.render()
+
+    # Hit testing must also evaluate part clustering without error
+    hit_part = vab._get_part_at_mouse((vab.canvas_rect.centerx, vab.canvas_rect.centery))
+    assert hit_part is not None
+
+    # Verify Part, Engine, and other subclasses are hashable and valid dictionary keys
+    engines = [p for p in vab.rocket.stages[0].parts if hasattr(p, "thrust_vac")]
+    eng_dict = {eng: idx for idx, eng in enumerate(engines)}
+    assert len(eng_dict) == len(engines)
+    for idx, eng in enumerate(engines):
+        assert eng_dict[eng] == idx
+
+
+def test_vab_catalog_spawning_all_templates(pygame_surface):
+    """Verify all catalog part templates instantiate without NameError and can be spawned via buttons."""
+    from ui.vab_view import CATALOG_TEMPLATES
+
+    vab = VABView(surface=pygame_surface)
+    vab._clear_rocket()
+
+    # 1. Directly test every template factory
+    for item in CATALOG_TEMPLATES:
+        part = item["factory"]()
+        assert part is not None
+        assert bool(part.id)
+        assert bool(part.name)
+
+    # 2. Test spawning through catalog button clicks
+    initial_count = sum(len(s.parts) for s in vab.rocket.stages)
+    for btn in vab.catalog_buttons:
+        ev_down = pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=btn.rect.center)
+        btn.handle_event(ev_down)
+        ev_up = pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=btn.rect.center)
+        btn.handle_event(ev_up)
+
+    assert sum(len(s.parts) for s in vab.rocket.stages) == initial_count + len(vab.catalog_buttons)
+
+    # 3. Canvas rendering with all newly spawned parts
+    vab.render()
+
+
 # ============================================================================
 # 2. Camera Tracking & Scrolling
 # ============================================================================

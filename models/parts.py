@@ -26,7 +26,7 @@ P0: float = STANDARD_SEA_LEVEL_PRESSURE
 Scalar = Union[int, float, np.floating, np.integer]
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, eq=False)
 class Part:
     """Base class for all rocket components.
 
@@ -129,7 +129,7 @@ class Part:
         )
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, eq=False)
 class FuelTank(Part):
     """Propellant tank component holding consumable fuel/oxidizer.
 
@@ -224,7 +224,7 @@ class FuelTank(Part):
         )
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, eq=False)
 class Engine(Part):
     """Rocket propulsion engine with pressure-dependent Isp, thrust, and gimbaling.
 
@@ -389,7 +389,7 @@ class Engine(Part):
         )
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, eq=False)
 class Decoupler(Part):
     """Interstage separation decoupler.
 
@@ -431,7 +431,7 @@ class Decoupler(Part):
         )
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, eq=False)
 class Payload(Part):
     """Payload fairing, scientific satellite, or crew capsule component."""
 

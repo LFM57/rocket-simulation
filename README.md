@@ -94,7 +94,7 @@ python main.py --fullscreen
 ## 📐 Physics Foundations
 
 - **Planar 3-DOF Equations of Motion**:
-  $$\mathbf{a} = \frac{\mathbf{F}_{\text{thrust}} + \mathbf{F}_{\text{aero}}}{m(t)} + \mathbf{g}(\mathbf{r}), \quad \alpha = \frac{\tau_{\text{thrust}} + \tau_{\text{aero}}}{I_{zz}}$$
+  $$\mathbf{a} = \frac{\mathbf{F}_ {\text{thrust}} + \mathbf{F}_ {\text{aero}}}{m(t)} + \mathbf{g}(\mathbf{r}), \quad \alpha = \frac{\tau_ {\text{thrust}} + \tau_ {\text{aero}}}{I_{zz}}$$
 - **Thrust & Mass Flow**:
   Engine thrust scales with ambient barometric pressure:
   $$F(p_{\text{amb}}) = F_{\text{vac}} - \left(\frac{p_{\text{amb}}}{p_0}\right)(F_{\text{vac}} - F_{\text{sl}}), \quad \dot{m} = \frac{F_{\text{vac}}}{g_0 I_{\text{sp,vac}}}$$

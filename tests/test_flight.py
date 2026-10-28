@@ -603,6 +603,77 @@ def test_surface_corotation_velocity_airless_rotating_body():
     assert math.isclose(vehicle.velocity.magnitude(), expected_speed, rel_tol=1e-5)
 
 
+def test_decoupler_separation_impulse_applied():
+    """Verify that stage separation applies separation impulse Delta-v = J / m along vehicle attitude."""
+    from models.parts import Decoupler, Engine, FuelTank, Part
+    from models.rocket import Rocket, Stage
+
+    earth = get_earth()
+    # Stage 1 with a decoupler providing 5000 N s
+    decoupler = Decoupler(
+        id="dec",
+        name="Decoupler",
+        dry_mass=100.0,
+        length=1.0,
+        radius=1.0,
+        separation_impulse=5000.0,
+    )
+    s1_tank = FuelTank(
+        id="s1_tank",
+        name="S1 Tank",
+        dry_mass=500.0,
+        length=5.0,
+        radius=1.0,
+        propellant_mass=0.0,
+        propellant_capacity=1000.0,
+    )
+    stage1 = Stage(stage_id="s1", name="Stage 1", parts=[s1_tank, decoupler], staging_order=0)
+
+    # Stage 2 (remaining mass = 500 kg)
+    s2_part = Part(
+        id="s2_payload",
+        name="Payload",
+        dry_mass=500.0,
+        length=2.0,
+        radius=1.0,
+    )
+    stage2 = Stage(stage_id="s2", name="Stage 2", parts=[s2_part], staging_order=1)
+
+    rocket = Rocket(stages=[stage1, stage2])
+    # Attitude at 45 degrees
+    att = math.pi / 4.0
+    v0 = Vector2D(100.0, 200.0)
+    pos = Vector2D(0.0, earth.radius + 100_000.0)
+
+    vehicle = FlightVehicle(
+        rocket=rocket,
+        body=earth,
+        position=pos,
+        velocity=v0,
+        attitude=att,
+        state=VehicleState.IN_FLIGHT,
+    )
+
+    # Stage 2 mass = 500 kg
+    assert rocket.total_mass() == 1100.0
+
+    # Trigger staging
+    separated = vehicle.stage(ignite=False)
+
+    assert separated is not None
+    assert rocket.last_separation_impulse == 5000.0
+    rem_mass = rocket.total_mass()
+    assert rem_mass == 500.0
+
+    # Expected delta-v = 5000 N s / 500 kg = 10.0 m/s along heading
+    expected_dv = Vector2D(math.cos(att), math.sin(att)) * 10.0
+    expected_v = v0 + expected_dv
+
+    assert math.isclose(vehicle.velocity.x, expected_v.x, rel_tol=1e-6)
+    assert math.isclose(vehicle.velocity.y, expected_v.y, rel_tol=1e-6)
+
+
+
 
 
 

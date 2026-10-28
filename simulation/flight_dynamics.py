@@ -436,8 +436,18 @@ class FlightVehicle:
             The separated stage, or None if no stage was decoupled.
         """
         decoupled = self.rocket.stage()
-        if decoupled is not None and ignite:
-            if self.rocket.active_stage is not None:
+        if decoupled is not None:
+            # Apply separation impulse from decouplers along vehicle heading: Delta-v = J / m
+            impulse = getattr(self.rocket, "last_separation_impulse", 0.0)
+            if impulse == 0.0:
+                impulse = sum(d.separation_impulse for d in decoupled.decouplers)
+            rem_mass = self.rocket.total_mass()
+            if impulse > 0.0 and rem_mass > 0.0:
+                dv = impulse / rem_mass
+                u_hat = Vector2D(math.cos(self.attitude), math.sin(self.attitude))
+                self.velocity = self.velocity + u_hat * dv
+
+            if ignite and self.rocket.active_stage is not None:
                 for eng in self.rocket.active_stage.engines:
                     eng.ignite()
         return decoupled

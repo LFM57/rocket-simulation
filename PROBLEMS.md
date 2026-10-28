@@ -18,7 +18,7 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 | 3.1 | `TelemetryLogger` Overestimates Expended $\Delta v$ on Sub-Stepped Burnout and Staging | **DONE** | `d65685e` |
 | 3.2 | `TelemetryLogger.get_summary()` Ignores Aerodynamic G-Forces | **DONE** | Solved |
 | 3.3 | `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop | **DONE** | Solved |
-| 3.4 | Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch | **TODO** | Open |
+| 3.4 | Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch | **DONE** | Solved |
 | 3.5 | Missing `Part` import for static type checkers in `simulation/flight_dynamics.py` | **TODO** | Open |
 | 3.6 | Partial-burn liftoff check on `ON_PAD` | **TODO** | Open |
 
@@ -290,8 +290,8 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 
 ---
 
-### 3.4. [TODO] Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch
-- **Status**: Open
+### 3.4. [DONE] Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch
+- **Status**: Solved
 - **Severity**: Low
 - **Locations**:
   - `models/parts.py` (lines 334–341), `models/rocket.py` (lines 393–432)

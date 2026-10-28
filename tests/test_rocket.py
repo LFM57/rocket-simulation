@@ -686,3 +686,10 @@ def test_engine_cluster_clamping_and_enclosed_parts():
     expected_cop = (80.0 * 10.0 + 8.0 * 1.0) / 88.0
     assert math.isclose(rocket.center_of_pressure(), expected_cop, rel_tol=1e-6)
 
+
+def test_thrust_force_and_torque_docstring_and_torque_sign():
+    """Verify Rocket.thrust_force_and_torque docstring matches implementation sign."""
+    assert Rocket.thrust_force_and_torque.__doc__ is not None
+    assert "tau_thrust = -(y_engine - y_CoM) * (T * sin(delta))" in Rocket.thrust_force_and_torque.__doc__
+
+

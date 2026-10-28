@@ -158,6 +158,7 @@ class Rocket:
     name: str = "Rocket"
     stages: list[Stage] = field(default_factory=list)
     active_stage_index: int = 0
+    last_separation_impulse: float = 0.0
 
     def __post_init__(self) -> None:
         """Ensure active stage pointers and types."""
@@ -418,7 +419,7 @@ class Rocket:
 
         Equations:
             F_thrust,body = Vector2D(T * sin(delta), T * cos(delta))
-            tau_thrust = (y_engine - y_CoM) * (T * sin(delta))
+            tau_thrust = -(y_engine - y_CoM) * (T * sin(delta))
 
         Parameters
         ----------
@@ -510,6 +511,12 @@ class Rocket:
         else:
             # Advance past stages
             self.active_stage_index = len(self.stages)
+
+        # Record separation impulse from decouplers on separating interface
+        impulse = sum(d.separation_impulse for d in current.decouplers)
+        if impulse == 0.0 and next_stage is not None:
+            impulse = sum(d.separation_impulse for d in next_stage.decouplers)
+        self.last_separation_impulse = float(np.float64(impulse))
 
         return current
 

@@ -20,7 +20,7 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 | 3.3 | `Simulation.run()` Misplaced Docstring and `wall_dt <= 0` Infinite Loop | **DONE** | Solved |
 | 3.4 | Unused `Decoupler.separation_impulse` & Docstring Sign Mismatch | **DONE** | Solved |
 | 3.5 | Missing `Part` import for static type checkers in `simulation/flight_dynamics.py` | **DONE** | Solved |
-| 3.6 | Partial-burn liftoff check on `ON_PAD` | **TODO** | Open |
+| 3.6 | Partial-burn liftoff check on `ON_PAD` | **DONE** | Solved |
 
 ---
 
@@ -309,5 +309,11 @@ This document catalogs the critical bugs, mathematical/physical inaccuracies, an
 - **Description**:
   Line 350 of `simulation/flight_dynamics.py` uses the type annotation `axial_groups: dict[float, list[Part]] = {}`, but only `Engine` was imported from `models.parts`. Because `from __future__ import annotations` is active, Python does not fail at runtime, but `mypy`/`pyright` flags `Part` as undefined unless changed to `from models.parts import Engine, Part`.
 
-### 3.6 **Partial-burn liftoff check on `ON_PAD` (`simulation/flight_dynamics.py:536-560`)**:
-If a rocket is `ON_PAD` with only a tiny trace of propellant left (enough for e.g. $0.01\text{ s}$ of thrust during a $1.0\text{ s}$ step), the `ON_PAD` liftoff check uses unscaled instantaneous thrust (`radial_thrust > weight`), transitions to `IN_FLIGHT`, and then immediately scales the step's thrust down to $1\%$ in `IN_FLIGHT`, causing the vehicle to sink below `altitude <= 0.0` and transition to `LANDED`. Scaling `f_thrust_vec` by `min(1.0, avail_prop / (total_mdot * dt_val))` during the `ON_PAD` check prevents liftoff when propellant cannot sustain $T > W$ across the step.
+---
+
+### 3.6. [DONE] Partial-burn liftoff check on `ON_PAD` (`simulation/flight_dynamics.py:699-716`)
+- **Status**: Solved
+- **Severity**: Medium
+- **Location**: `simulation/flight_dynamics.py` (lines 699–716)
+- **Description**:
+  If a rocket is `ON_PAD` with only a tiny trace of propellant left (enough for e.g. $0.01\text{ s}$ of thrust during a $1.0\text{ s}$ step), the `ON_PAD` liftoff check previously used unscaled instantaneous thrust (`radial_thrust > weight`), transitioned to `IN_FLIGHT`, and then scaled the step's thrust down to $1\%$ in `IN_FLIGHT`, causing the vehicle to sink below `altitude <= 0.0` and transition to `LANDED`. Scaling `f_thrust_vec` by `min(1.0, avail_prop / (total_mdot * dt_val))` during the `ON_PAD` check prevents false liftoff when propellant cannot sustain $T > W$ across the step.

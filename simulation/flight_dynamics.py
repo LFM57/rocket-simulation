@@ -696,17 +696,24 @@ class FlightVehicle:
             r_hat = self.position / r_mag if r_mag > 0.0 else Vector2D(0.0, 1.0)
             p_sl = self.body.atmosphere.pressure(0.0) if self.body.atmosphere else 0.0
 
-            # Calculate instantaneous net thrust vector
+            # Calculate net thrust vector scaled by step burn fraction
             f_thrust_vec = Vector2D(0.0, 0.0)
             if (
                 self.rocket.active_stage is not None
                 and self.rocket.active_stage.propellant_mass() > 0.0
             ):
+                total_mdot = 0.0
                 for eng in self.rocket.active_stage.engines:
                     if eng.is_ignited and eng.throttle > 0.0:
-                        t_e, _ = eng.get_thrust_and_mass_flow(p_sl)
+                        t_e, m_dot = eng.get_thrust_and_mass_flow(p_sl)
+                        total_mdot += m_dot
                         ang = self.attitude - eng.current_gimbal
                         f_thrust_vec += Vector2D(t_e * math.cos(ang), t_e * math.sin(ang))
+
+                avail_prop = self.rocket.active_stage.propellant_mass()
+                prop_needed = total_mdot * dt_val
+                burn_scale = min(1.0, avail_prop / prop_needed) if prop_needed > 0.0 else 1.0
+                f_thrust_vec = f_thrust_vec * burn_scale
 
             radial_thrust = f_thrust_vec.dot(r_hat)
             weight = self.rocket.total_mass() * self.body.surface_gravity

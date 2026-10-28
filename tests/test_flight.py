@@ -682,6 +682,61 @@ def test_part_imported_in_flight_dynamics():
     assert fd.Part is Part
 
 
+def test_partial_burn_liftoff_prevention_on_pad():
+    """Verify that insufficient propellant for a full step does not trigger a false liftoff."""
+    from models.parts import Engine, FuelTank
+    from models.rocket import Rocket, Stage
+
+    earth = get_earth()
+    # Engine: 10,000 N, 300 s Isp -> ~3.4 kg/s mass flow
+    eng = Engine(
+        id="eng",
+        name="Engine",
+        dry_mass=100.0,
+        length=1.0,
+        radius=0.5,
+        thrust_vac=10_000.0,
+        thrust_sl=10_000.0,
+        isp_vac=300.0,
+        isp_sl=300.0,
+        is_ignited=True,
+        throttle=1.0,
+    )
+    # Propellant for only ~0.015 s (< 1.0 s step)
+    tank = FuelTank(
+        id="tank",
+        name="Tank",
+        dry_mass=50.0,
+        length=2.0,
+        radius=0.5,
+        propellant_mass=0.05,
+        propellant_capacity=100.0,
+    )
+    stage = Stage(stage_id="s1", name="Stage 1", parts=[eng, tank])
+    rocket = Rocket(stages=[stage])
+
+    # Position on launchpad at (0, R)
+    pos = Vector2D(0.0, earth.radius)
+    vehicle = FlightVehicle(
+        rocket=rocket,
+        body=earth,
+        position=pos,
+        state=VehicleState.ON_PAD,
+    )
+
+    # Step with dt = 1.0 s
+    # Instantaneous thrust (10,000 N) > weight (~1,471 N)
+    # But step-averaged thrust (~147 N) < weight
+    # Vehicle must NOT lift off!
+    snap = vehicle.step(dt=1.0)
+
+    assert vehicle.state == VehicleState.ON_PAD
+    assert snap.state == VehicleState.ON_PAD
+    assert rocket.active_stage.propellant_mass() == 0.0
+    assert not eng.is_ignited
+
+
+
 
 
 

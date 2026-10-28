@@ -203,7 +203,7 @@ class TelemetryModal:
         # Header Title & State Badge
         draw_text(self.surface, "MISSION TELEMETRY SUMMARY", self.modal_rect.left + 20, self.modal_rect.top + 22, size=18, color=TEXT_WHITE, bold=True)
 
-        state_str = str(self.final_state)
+        state_str = self.final_state.value if hasattr(self.final_state, "value") else str(self.final_state)
         state_c = ACCENT_GREEN if self.final_state == VehicleState.LANDED else (ACCENT_RED if self.final_state == VehicleState.DESTROYED else ACCENT_CYAN)
         draw_text(self.surface, f"STATUS: {state_str}", self.modal_rect.right - 20, self.modal_rect.top + 22, size=14, color=state_c, bold=True, align="right")
 
@@ -271,6 +271,7 @@ class FlightView:
             attitude=math.pi * 0.5,  # Vertical
             state=VehicleState.ON_PAD,
         )
+        self.vehicle.autopilot.kd = 6.0  # High-damping rate gain for stable attitude control
 
         self.logger: TelemetryLogger = TelemetryLogger(sample_dt=0.05)
         self.sim: Simulation = Simulation(
@@ -296,6 +297,9 @@ class FlightView:
         self.is_map_view: bool = False
         self.modal: Optional[TelemetryModal] = None
         self.is_paused: bool = False
+        self.pan_offset: Vector2D = Vector2D(0.0, 0.0)
+        self.is_panning: bool = False
+        self.pan_start: tuple[int, int] = (0, 0)
 
         # Input command states
         self.throttle_cmd: float = 0.0
@@ -317,13 +321,13 @@ class FlightView:
         self.renderer.set_surface(self.surface)
 
         # Left HUD: Slider & Fuel Gauge
-        slider_y = height // 2 - 140
+        slider_y = max(86, min(height - 360, height // 2 - 140))
         self.throttle_slider.rect = pygame.Rect(24, slider_y, 54, 260)
         self.fuel_gauge.rect = pygame.Rect(24, slider_y + 276, 176, 26)
 
         # SAS Selector Buttons
         sas_x = 24
-        sas_y = slider_y - 84
+        sas_y = slider_y - 36
         sas_w = 42
         sas_h = 28
 
@@ -359,7 +363,8 @@ class FlightView:
         # Top Bar: Time Warp Buttons
         self.warp_buttons.clear()
         warps = [1.0, 2.0, 4.0, 10.0, 50.0, 100.0, 1000.0]
-        wx = width // 2 - 240
+        total_w = (len(warps) - 1) * 48 + 44
+        wx = (width - total_w) // 2
         wy = 12
         for w_val in warps:
             w_text = f"{int(w_val)}x" if w_val >= 1.0 else f"{w_val}x"
@@ -473,6 +478,7 @@ class FlightView:
             attitude=math.pi * 0.5,
             state=VehicleState.ON_PAD,
         )
+        self.vehicle.autopilot.kd = 6.0
         self.logger = TelemetryLogger(sample_dt=0.05)
         self.sim = Simulation(vehicle=self.vehicle, body=self.body, logger=self.logger)
         self.throttle_slider.set_value(0.0)
@@ -480,6 +486,7 @@ class FlightView:
         self.camera.snap_to(self.vehicle.position)
         self.camera.snap_scale(12.0)
         self.camera.set_mode(CameraMode.HORIZON_UP)
+        self.pan_offset = Vector2D(0.0, 0.0)
         self.is_map_view = False
         self.toast.show("Reverted to Launchpad", duration=2.0, color=ACCENT_CYAN)
 
@@ -571,11 +578,20 @@ class FlightView:
             elif event.key in (pygame.K_RIGHT, pygame.K_d):
                 self.steer_rate = -0.4  # Steer CW
                 return True
-            elif event.key == pygame.K_PERIOD:  # Increase warp
+            elif event.key in (pygame.K_PERIOD, pygame.K_GREATER):  # Increase warp
                 self._step_warp(1)
                 return True
-            elif event.key == pygame.K_COMMA:  # Decrease warp
+            elif event.key in (pygame.K_COMMA, pygame.K_LESS):  # Decrease warp
                 self._step_warp(-1)
+                return True
+            elif event.key in (pygame.K_EQUALS, pygame.K_PLUS, pygame.K_KP_PLUS):
+                self.camera.zoom_in(1.25)
+                return True
+            elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
+                self.camera.zoom_out(1.25)
+                return True
+            elif event.key in (pygame.K_HOME, pygame.K_BACKSPACE):
+                self.pan_offset = Vector2D(0.0, 0.0)
                 return True
 
         elif event.type == pygame.KEYUP:
@@ -583,13 +599,41 @@ class FlightView:
                 self.steer_rate = 0.0
                 return True
 
-        # Mouse Zoom
+        # Mouse Wheel Zoom
+        if event.type == pygame.MOUSEWHEEL:
+            if event.y > 0:
+                self.camera.zoom_in(1.15 ** abs(event.y))
+                return True
+            elif event.y < 0:
+                self.camera.zoom_out(1.15 ** abs(event.y))
+                return True
+
+        # Mouse Panning & Legacy Zoom
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 4:  # Wheel up
+            if event.button in (2, 3):  # Middle or Right click to pan
+                self.is_panning = True
+                self.pan_start = event.pos
+                return True
+            elif event.button == 4:  # Wheel up
                 self.camera.zoom_in(1.25)
                 return True
             elif event.button == 5:  # Wheel down
                 self.camera.zoom_out(1.25)
+                return True
+
+        elif event.type == pygame.MOUSEBUTTONUP:
+            if event.button in (2, 3) and self.is_panning:
+                self.is_panning = False
+                return True
+
+        elif event.type == pygame.MOUSEMOTION:
+            if self.is_panning:
+                dx = event.pos[0] - self.pan_start[0]
+                dy = event.pos[1] - self.pan_start[1]
+                self.pan_start = event.pos
+                dx_m = dx / max(1e-6, self.camera.scale)
+                dy_m = -dy / max(1e-6, self.camera.scale)
+                self.pan_offset = self.pan_offset + Vector2D(dx_m, dy_m)
                 return True
 
         return False
@@ -619,11 +663,35 @@ class FlightView:
         if abs(self.steer_rate) > 1e-4:
             if self.vehicle.autopilot.mode == SASMode.HOLD_ATTITUDE:
                 self.vehicle.autopilot.target_attitude += self.steer_rate * dt_val
+                # Clamp lead angle to prevent target windup
+                lead = math.atan2(
+                    math.sin(self.vehicle.autopilot.target_attitude - self.vehicle.attitude),
+                    math.cos(self.vehicle.autopilot.target_attitude - self.vehicle.attitude),
+                )
+                max_lead = 0.25  # ~14 degrees max lead
+                if abs(lead) > max_lead:
+                    self.vehicle.autopilot.target_attitude = float(
+                        self.vehicle.attitude + math.copysign(max_lead, lead)
+                    )
             elif self.vehicle.autopilot.mode == SASMode.OFF:
                 # Direct manual gimbal steering
                 if self.vehicle.rocket.active_stage is not None:
                     for eng in self.vehicle.rocket.active_stage.engines:
-                        eng.set_gimbal(eng.current_gimbal + self.steer_rate * dt_val * 0.2)
+                        target_gimbal = eng.current_gimbal + self.steer_rate * dt_val * 0.4
+                        eng.set_gimbal(target_gimbal)
+        elif self.vehicle.autopilot.mode == SASMode.OFF:
+            # Re-center manual gimbal smoothly back to 0.0 when keys are released
+            if self.vehicle.rocket.active_stage is not None:
+                for eng in self.vehicle.rocket.active_stage.engines:
+                    if abs(eng.current_gimbal) > 1e-4:
+                        return_step = 2.0 * dt_val
+                        new_gimbal = math.copysign(
+                            max(0.0, abs(eng.current_gimbal) - return_step),
+                            eng.current_gimbal,
+                        )
+                        eng.set_gimbal(new_gimbal)
+                    else:
+                        eng.set_gimbal(0.0)
 
         # Advance physical simulation
         target_pitch = (
@@ -644,9 +712,12 @@ class FlightView:
         if self.vehicle.state in (VehicleState.LANDED, VehicleState.DESTROYED) and self.modal is None:
             self.open_modal()
 
-        # Camera tracking
+        # Camera tracking with manual pan offset
+        cam_target = self.vehicle.position
+        if abs(self.pan_offset.x) > 1e-4 or abs(self.pan_offset.y) > 1e-4:
+            cam_target = cam_target + self.pan_offset.rotate(-self.camera.rotation_angle)
         self.camera.set_reference_position(self.vehicle.position)
-        self.camera.set_target(self.vehicle.position)
+        self.camera.set_target(cam_target)
         self.camera.update(dt_val)
 
         # Update toast manager
@@ -702,7 +773,7 @@ class FlightView:
             prop_cur = active_st.propellant_mass()
             prop_cap = sum(getattr(t, "propellant_capacity", prop_cur) for t in active_st.fuel_tanks)
             self.fuel_gauge.set_value(prop_cur, max_val=max(1.0, prop_cap))
-            self.fuel_gauge.label = f"Propellant ({format_mass(prop_cur)})"
+            self.fuel_gauge.label = f"Fuel ({format_mass(prop_cur)})"
         else:
             self.fuel_gauge.set_value(0.0, max_val=1.0)
             self.fuel_gauge.label = "No Active Stage"
@@ -745,7 +816,8 @@ class FlightView:
         draw_text(self.surface, "TELEMETRY", x + 12, y + 14, size=12, color=TEXT_WHITE, bold=True)
         # Vehicle state badge
         st_color = ACCENT_GREEN if snap.state in (VehicleState.ON_PAD, VehicleState.IN_FLIGHT) else ACCENT_RED
-        draw_text(self.surface, str(snap.state or ""), x + width - 12, y + 14, size=11, color=st_color, bold=True, align="right")
+        st_text = snap.state.value if hasattr(snap.state, "value") else str(snap.state or "")
+        draw_text(self.surface, st_text, x + width - 12, y + 14, size=11, color=st_color, bold=True, align="right")
 
         pygame.draw.line(self.surface, PANEL_BORDER, (x + 10, y + 28), (x + width - 10, y + 28), width=1)
 

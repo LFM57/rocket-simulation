@@ -354,6 +354,8 @@ class VABView:
         self.scale: float = 8.0  # px/meter
         self.is_panning: bool = False
         self.pan_start: tuple[int, int] = (0, 0)
+        self.catalog_scroll_y: float = 0.0
+        self.engineering_scroll_y: float = 0.0
 
         # UI Layout Rectangles (computed in update_layout)
         self.sidebar_left_rect: pygame.Rect = pygame.Rect(0, 0, 240, 720)
@@ -371,8 +373,8 @@ class VABView:
 
     def update_layout(self, width: int, height: int) -> None:
         """Update layout geometries when window is resized."""
-        left_w = 230
-        right_w = 290
+        left_w = 210 if width < 1050 else 230
+        right_w = 260 if width < 1050 else 290
         top_h = 46
 
         self.sidebar_left_rect = pygame.Rect(0, 0, left_w, height)
@@ -381,6 +383,7 @@ class VABView:
         self.canvas_rect = pygame.Rect(left_w, top_h, width - left_w - right_w, height - top_h)
 
         self._init_ui()
+        self.recenter_canvas()
 
     def _init_ui(self) -> None:
         """Initialize UI widgets and buttons."""
@@ -389,7 +392,7 @@ class VABView:
         self.action_buttons.clear()
 
         # 1. Left Catalog Buttons
-        by = 50
+        by = 50 - int(self.catalog_scroll_y)
         for item in CATALOG_TEMPLATES:
             btn_rect = pygame.Rect(12, by, self.sidebar_left_rect.width - 24, 34)
             # Capture factory in closure
@@ -403,45 +406,57 @@ class VABView:
             self.catalog_buttons.append(btn)
             by += 40
 
-        # 2. Top Bar Buttons
-        tx = self.top_bar_rect.left + 12
+        # 2. Top Bar Buttons (Right-aligned to prevent colliding with rocket name on the left)
         ty = 8
+        bx = self.top_bar_rect.right - 10
+        is_compact = self.top_bar_rect.width < 500
 
-        b_preset = Button(
-            rect=pygame.Rect(tx, ty, 150, 30),
-            text="Falcon 9 Preset",
-            on_click=self._load_falcon9,
-            font_size=12,
+        # Load JSON
+        w_load = 50 if is_compact else 75
+        txt_load = "Load" if is_compact else "Load JSON"
+        bx -= w_load
+        b_load = Button(
+            rect=pygame.Rect(bx, ty, w_load, 30),
+            text=txt_load,
+            on_click=self._load_json,
+            font_size=11,
         )
-        tx += 160
 
+        # Save JSON
+        w_save = 50 if is_compact else 75
+        txt_save = "Save" if is_compact else "Save JSON"
+        bx -= (w_save + 6)
+        b_save = Button(
+            rect=pygame.Rect(bx, ty, w_save, 30),
+            text=txt_save,
+            on_click=self._save_json,
+            font_size=11,
+        )
+
+        # Clear
+        w_clear = 44 if is_compact else 55
+        bx -= (w_clear + 6)
         b_clear = Button(
-            rect=pygame.Rect(tx, ty, 70, 30),
+            rect=pygame.Rect(bx, ty, w_clear, 30),
             text="Clear",
             on_click=self._clear_rocket,
-            font_size=12,
+            font_size=11,
         )
-        tx += 80
 
-        b_save = Button(
-            rect=pygame.Rect(tx, ty, 80, 30),
-            text="Save JSON",
-            on_click=self._save_json,
-            font_size=12,
+        # Falcon 9 Preset
+        w_preset = 65 if is_compact else 110
+        txt_preset = "Preset" if is_compact else "Falcon 9 Preset"
+        bx -= (w_preset + 6)
+        b_preset = Button(
+            rect=pygame.Rect(bx, ty, w_preset, 30),
+            text=txt_preset,
+            on_click=self._load_falcon9,
+            font_size=11,
         )
-        tx += 90
-
-        b_load = Button(
-            rect=pygame.Rect(tx, ty, 80, 30),
-            text="Load JSON",
-            on_click=self._load_json,
-            font_size=12,
-        )
-        tx += 100
 
         self.top_buttons = [b_preset, b_clear, b_save, b_load]
 
-        # 3. Right Panel Action Button (LAUNCH)
+        # 3. Right Panel Action Button (LAUNCH - pinned to bottom)
         rx = self.sidebar_right_rect.left + 16
         ry = self.sidebar_right_rect.bottom - 54
         rw = self.sidebar_right_rect.width - 32
@@ -459,13 +474,14 @@ class VABView:
         self.action_buttons = [b_launch]
 
     def recenter_canvas(self) -> None:
-        """Center the blueprint canvas on the rocket."""
+        """Center the blueprint canvas on the rocket and scale to fit viewport."""
         total_len = 0.0
         for s in self.rocket.stages:
             for p in s.parts:
                 total_len = max(total_len, s.position_offset + p.position_offset + p.length * 0.5)
 
-        self.scale = 10.0
+        fit_scale = (self.canvas_rect.height * 0.82) / max(1.0, total_len)
+        self.scale = max(2.0, min(25.0, fit_scale))
         self.pan_x = self.canvas_rect.centerx
         self.pan_y = self.canvas_rect.centery + (total_len * 0.5 * self.scale)
 
@@ -561,9 +577,37 @@ class VABView:
                 self.recenter_canvas()
                 return True
 
+        # Mouse Wheel & Sidebar Scrolling
+        if event.type == pygame.MOUSEWHEEL:
+            m_pos = pygame.mouse.get_pos()
+            if self.sidebar_left_rect.collidepoint(m_pos):
+                max_cat_scroll = max(0.0, float(len(CATALOG_TEMPLATES) * 40 + 70 - self.sidebar_left_rect.height))
+                self.catalog_scroll_y = max(0.0, min(max_cat_scroll, self.catalog_scroll_y - event.y * 30))
+                self._init_ui()
+                return True
+            elif self.sidebar_right_rect.collidepoint(m_pos):
+                self.engineering_scroll_y = max(0.0, self.engineering_scroll_y - event.y * 30)
+                return True
+            elif self.canvas_rect.collidepoint(m_pos):
+                self._zoom(1.15 ** event.y, m_pos)
+                return True
+
         # Canvas pan & zoom
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.canvas_rect.collidepoint(event.pos):
+            if event.button in (4, 5):  # Legacy Wheel
+                delta = 1.0 if event.button == 4 else -1.0
+                if self.sidebar_left_rect.collidepoint(event.pos):
+                    max_cat_scroll = max(0.0, float(len(CATALOG_TEMPLATES) * 40 + 70 - self.sidebar_left_rect.height))
+                    self.catalog_scroll_y = max(0.0, min(max_cat_scroll, self.catalog_scroll_y - delta * 30))
+                    self._init_ui()
+                    return True
+                elif self.sidebar_right_rect.collidepoint(event.pos):
+                    self.engineering_scroll_y = max(0.0, self.engineering_scroll_y - delta * 30)
+                    return True
+                elif self.canvas_rect.collidepoint(event.pos):
+                    self._zoom(1.15 if event.button == 4 else (1.0 / 1.15), event.pos)
+                    return True
+            elif self.canvas_rect.collidepoint(event.pos):
                 if event.button == 1:
                     # Check part selection
                     part = self._get_part_at_mouse(event.pos)
@@ -576,12 +620,6 @@ class VABView:
                 elif event.button == 3:  # Right-click pan
                     self.is_panning = True
                     self.pan_start = event.pos
-                    return True
-                elif event.button == 4:  # Wheel up: zoom in
-                    self._zoom(1.15, event.pos)
-                    return True
-                elif event.button == 5:  # Wheel down: zoom out
-                    self._zoom(1.0 / 1.15, event.pos)
                     return True
 
         elif event.type == pygame.MOUSEBUTTONUP:
@@ -626,14 +664,19 @@ class VABView:
         mx, my = mouse_pos
         for s in self.rocket.stages:
             stage_base = s.position_offset
+            engines = [p for p in s.parts if isinstance(p, Engine)]
+            eng_offsets = self._compute_cluster_offsets(engines)
+            eng_map = dict(zip(engines, eng_offsets))
+
             for p in s.parts:
                 y_center = stage_base + p.position_offset
                 l_half = p.length * 0.5
                 r = p.radius
+                x_lat = eng_map.get(p, 0.0)
 
                 # Screen bounds
-                sx1 = self.pan_x - r * self.scale
-                sx2 = self.pan_x + r * self.scale
+                sx1 = self.pan_x + x_lat * self.scale - r * self.scale
+                sx2 = self.pan_x + x_lat * self.scale + r * self.scale
                 sy1 = self.pan_y - (y_center + l_half) * self.scale
                 sy2 = self.pan_y - (y_center - l_half) * self.scale
 
@@ -702,17 +745,38 @@ class VABView:
         # Reset clip
         self.surface.set_clip(None)
 
+    def _compute_cluster_offsets(self, engines: list[Engine]) -> list[float]:
+        """Compute lateral cluster offsets x_lat for multi-engine stages."""
+        n = len(engines)
+        if n <= 1:
+            return [0.0]
+        if n == 9:
+            r_cluster = engines[0].radius * 2.2
+            angles = [i * (2.0 * math.pi / 8) for i in range(8)]
+            offsets = [r_cluster * math.sin(a) for a in angles]
+            offsets.append(0.0)  # Center engine
+            return offsets
+        spacing = engines[0].radius * 2.1
+        total_span = (n - 1) * spacing
+        return [-0.5 * total_span + i * spacing for i in range(n)]
+
     def _render_rocket_stack(self) -> None:
         """Render all stages and parts on the blueprint canvas."""
+        f_lbl = get_font(size=11, bold=True)
         for s in self.rocket.stages:
             stage_base = s.position_offset
+            engines = [p for p in s.parts if isinstance(p, Engine)]
+            eng_offsets = self._compute_cluster_offsets(engines)
+            eng_map = dict(zip(engines, eng_offsets))
+
             for p in s.parts:
                 y_center = stage_base + p.position_offset
                 l_half = p.length * 0.5
                 r = p.radius
+                x_lat = eng_map.get(p, 0.0)
 
                 # Screen bounding rect
-                px = self.pan_x - r * self.scale
+                px = self.pan_x + x_lat * self.scale - r * self.scale
                 py = self.pan_y - (y_center + l_half) * self.scale
                 pw = 2.0 * r * self.scale
                 ph = p.length * self.scale
@@ -724,11 +788,12 @@ class VABView:
                 if isinstance(p, Engine):
                     # Bell trapezoid
                     throat_w = pw * 0.35
+                    throat_center = self.pan_x + x_lat * self.scale
                     pts = [
-                        (self.pan_x - throat_w * 0.5, py),
+                        (throat_center - throat_w * 0.5, py),
                         (px, py + ph),
                         (px + pw, py + ph),
-                        (self.pan_x + throat_w * 0.5, py),
+                        (throat_center + throat_w * 0.5, py),
                     ]
                     color = (70, 75, 90) if not is_selected else (90, 120, 160)
                     pygame.draw.polygon(self.surface, color, pts)
@@ -752,15 +817,40 @@ class VABView:
                     pygame.draw.polygon(self.surface, color, pts)
                     pygame.draw.polygon(self.surface, ACCENT_CYAN if is_selected else (140, 155, 175), pts, width=2 if is_selected else 1)
 
-                else:  # Fuel Tank
+                else:  # Fuel Tank or other components
                     color = (205, 215, 228) if not is_selected else (170, 210, 250)
                     pygame.draw.rect(self.surface, color, part_rect, border_radius=4)
                     pygame.draw.rect(self.surface, ACCENT_CYAN if is_selected else (120, 135, 160), part_rect, width=2 if is_selected else 1, border_radius=4)
 
-                # Label on part
-                if ph > 18:
+                # Label on part (non-engine)
+                if not isinstance(p, Engine) and ph > 18:
+                    tw, th = f_lbl.size(p.name)
                     lbl_color = (20, 25, 35) if isinstance(p, (FuelTank, Payload)) else (230, 235, 245)
-                    draw_text(self.surface, p.name, self.pan_x, py + ph * 0.5, size=11, color=lbl_color, bold=True, align="center")
+                    if tw > pw - 6:
+                        # Draw badge pill so dark text never overflows into dark background
+                        badge_rect = pygame.Rect(int(self.pan_x - tw * 0.5 - 6), int(py + ph * 0.5 - th * 0.5 - 2), tw + 12, th + 4)
+                        badge_surf = pygame.Surface((badge_rect.width, badge_rect.height), pygame.SRCALPHA)
+                        badge_surf.fill((16, 24, 38, 220))
+                        self.surface.blit(badge_surf, badge_rect)
+                        pygame.draw.rect(self.surface, PANEL_BORDER_LIGHT, badge_rect, width=1, border_radius=4)
+                        draw_text(self.surface, p.name, self.pan_x, py + ph * 0.5, size=11, color=(235, 242, 255), bold=True, align="center")
+                    else:
+                        draw_text(self.surface, p.name, self.pan_x, py + ph * 0.5, size=11, color=lbl_color, bold=True, align="center")
+
+            # Engine cluster label (drawn once centered over cluster)
+            if engines:
+                first_eng = engines[0]
+                e_ph = first_eng.length * self.scale
+                e_py = self.pan_y - (stage_base + first_eng.position_offset + first_eng.length * 0.5) * self.scale
+                if e_ph > 14:
+                    eng_lbl = f"{len(engines)}x {first_eng.name}" if len(engines) > 1 else first_eng.name
+                    tw, th = f_lbl.size(eng_lbl)
+                    badge_rect = pygame.Rect(int(self.pan_x - tw * 0.5 - 6), int(e_py + e_ph * 0.5 - th * 0.5 - 2), tw + 12, th + 4)
+                    badge_surf = pygame.Surface((badge_rect.width, badge_rect.height), pygame.SRCALPHA)
+                    badge_surf.fill((16, 24, 38, 220))
+                    self.surface.blit(badge_surf, badge_rect)
+                    pygame.draw.rect(self.surface, PANEL_BORDER_LIGHT, badge_rect, width=1, border_radius=4)
+                    draw_text(self.surface, eng_lbl, self.pan_x, e_py + e_ph * 0.5, size=11, color=(235, 242, 255), bold=True, align="center")
 
     def _render_blueprint_markers(self) -> None:
         """Render CoM (Center of Mass) and CoP (Center of Pressure) markers."""
@@ -789,15 +879,18 @@ class VABView:
         draw_text(self.surface, f"CoP: {y_cop:.2f}m", cop_x - 14, cop_y, size=11, color=ACCENT_CYAN, bold=True, align="right")
 
     def _render_catalog_panel(self) -> None:
-        """Render left sidebar catalog."""
+        """Render left sidebar catalog with clipping."""
         pygame.draw.rect(self.surface, PANEL_BG, self.sidebar_left_rect)
         pygame.draw.rect(self.surface, PANEL_BORDER, self.sidebar_left_rect, width=1)
 
-        draw_text(self.surface, "PART CATALOG", 16, 20, size=14, color=TEXT_WHITE, bold=True)
-        draw_text(self.surface, "Click to spawn & stack", 16, 36, size=11, color=TEXT_MUTED)
+        self.surface.set_clip(self.sidebar_left_rect)
+        draw_text(self.surface, "PART CATALOG", 16, 20 - int(self.catalog_scroll_y), size=14, color=TEXT_WHITE, bold=True)
+        draw_text(self.surface, "Click to spawn & stack", 16, 36 - int(self.catalog_scroll_y), size=11, color=TEXT_MUTED)
 
         for btn in self.catalog_buttons:
-            btn.draw(self.surface)
+            if self.sidebar_left_rect.colliderect(btn.rect):
+                btn.draw(self.surface)
+        self.surface.set_clip(None)
 
     def _render_top_toolbar(self) -> None:
         """Render top toolbar buttons."""
@@ -814,8 +907,17 @@ class VABView:
         pygame.draw.rect(self.surface, PANEL_BG, self.sidebar_right_rect)
         pygame.draw.rect(self.surface, PANEL_BORDER, self.sidebar_right_rect, width=1)
 
+        # Content area clipped above the pinned bottom launch bar
+        content_rect = pygame.Rect(
+            self.sidebar_right_rect.left,
+            self.sidebar_right_rect.top,
+            self.sidebar_right_rect.width,
+            self.sidebar_right_rect.height - 60,
+        )
+        self.surface.set_clip(content_rect)
+
         px = self.sidebar_right_rect.left + 14
-        py = 18
+        py = 18 - int(self.engineering_scroll_y)
 
         draw_text(self.surface, "ENGINEERING READOUT", px, py, size=14, color=TEXT_WHITE, bold=True)
         py += 26
@@ -862,7 +964,7 @@ class VABView:
 
         # Draw Selected Part Inspector if a part is selected
         if self.selected_part is not None:
-            py = max(py, 420)
+            py += 14
             pygame.draw.line(self.surface, PANEL_BORDER, (px, py), (self.sidebar_right_rect.right - 14, py), width=1)
             py += 10
             draw_text(self.surface, "PART INSPECTOR", px, py, size=12, color=ACCENT_YELLOW, bold=True)
@@ -882,6 +984,17 @@ class VABView:
                 draw_text(self.surface, f"Isp Vac: {self.selected_part.isp_vac:.0f} s", px, py, size=11, color=TEXT_MUTED)
                 py += 14
             draw_text(self.surface, "[Del] Delete Part", px, py + 4, size=11, color=ACCENT_RED)
+
+        self.surface.set_clip(None)
+
+        # Pinned divider above launch button
+        pygame.draw.line(
+            self.surface,
+            PANEL_BORDER,
+            (self.sidebar_right_rect.left, self.sidebar_right_rect.bottom - 60),
+            (self.sidebar_right_rect.right, self.sidebar_right_rect.bottom - 60),
+            width=1,
+        )
 
         # Action Buttons (LAUNCH)
         for btn in self.action_buttons:

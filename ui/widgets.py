@@ -47,10 +47,16 @@ BUTTON_DISABLED: tuple[int, int, int] = (24, 28, 38)
 _FONT_CACHE: dict[tuple[int, bool, bool], pygame.font.Font] = {}
 
 
+def clear_font_cache() -> None:
+    """Clear cached font objects."""
+    _FONT_CACHE.clear()
+
+
 def get_font(size: int = 14, bold: bool = False, mono: bool = False) -> pygame.font.Font:
     """Retrieve cached pygame.font.Font instance."""
     if not pygame.font.get_init():
         pygame.font.init()
+        _FONT_CACHE.clear()
 
     key = (size, bold, mono)
     if key not in _FONT_CACHE:
@@ -446,12 +452,17 @@ class ProgressBar:
             txt = f"{self.label}: {pct_str}" if self.label else pct_str
 
         if txt:
+            f_size = 11
+            font = get_font(size=f_size, bold=True)
+            while font.size(txt)[0] > self.rect.width - 8 and f_size > 8:
+                f_size -= 1
+                font = get_font(size=f_size, bold=True)
             draw_text(
                 surface,
                 txt,
                 self.rect.centerx,
                 self.rect.centery,
-                size=11,
+                size=f_size,
                 color=TEXT_WHITE,
                 bold=True,
                 align="center",

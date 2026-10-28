@@ -750,6 +750,18 @@ class Renderer:
             pygame.draw.line(self.surface, ACCENT_RED, (rx - 3, ry - 3), (rx + 3, ry + 3), width=1)
             pygame.draw.line(self.surface, ACCENT_RED, (rx - 3, ry + 3), (rx + 3, ry - 3), width=1)
 
+        # 3. SAS Commanded Target Attitude Marker (if SAS is active)
+        if hasattr(vehicle, "autopilot") and getattr(vehicle.autopilot, "mode", None) != "OFF":
+            target_vec = Vector2D(
+                math.cos(vehicle.autopilot.target_attitude),
+                math.sin(vehicle.autopilot.target_attitude),
+            )
+            t_screen_ang = camera.world_vector_to_screen_angle(target_vec)
+            tx = cx + math.cos(t_screen_ang) * r_hud
+            ty = cy + math.sin(t_screen_ang) * r_hud
+            pygame.draw.circle(self.surface, ACCENT_CYAN, (int(tx), int(ty)), 4, width=1)
+            pygame.draw.circle(self.surface, (255, 255, 255), (int(tx), int(ty)), 1)
+
     # =========================================================================
     # 5. Real-Time Keplerian Orbit Conic Trajectory Rendering
     # =========================================================================

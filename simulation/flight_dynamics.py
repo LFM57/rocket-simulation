@@ -591,11 +591,24 @@ class FlightVehicle:
             center_of_pressure_offset=y_cop,
             cl_alpha=self.cl_alpha,
             transverse_area=transverse_area,
+            angular_velocity=omega,
         )
 
         # 5. Net Force & Torque
+        tau_control = tau_thrust
+        if abs(tau_thrust) < 1e-4:
+            # Cold gas RCS / reaction wheels provide control authority when engine thrust is zero
+            cmd_norm = 0.0
+            if self.autopilot.mode != SASMode.OFF:
+                cmd_norm = self.autopilot.last_gimbal_command / max(1e-4, self.autopilot.delta_max)
+            elif active_stage is not None and active_stage.engines:
+                cmd_norm = active_stage.engines[0].current_gimbal / max(1e-4, active_stage.engines[0].gimbal_limit)
+            cmd_norm = max(-1.0, min(1.0, cmd_norm))
+            tau_rcs_max = max(25000.0, 0.05 * i_zz)
+            tau_control += cmd_norm * tau_rcs_max
+
         f_total = f_grav + f_thrust + aero.force
-        tau_total = tau_thrust + aero.torque
+        tau_total = tau_control + aero.torque
 
         a_x = f_total.x / m
         a_y = f_total.y / m
@@ -677,15 +690,16 @@ class FlightVehicle:
             self.set_throttle(throttle)
 
         # 2. Advance autopilot SAS (updates engine gimbal deflection)
-        delta_cmd = self.autopilot.update(
-            theta=self.attitude,
-            omega=self.angular_velocity,
-            dt=dt_val,
-            velocity=self.velocity,
-        )
-        if self.rocket.active_stage is not None:
-            for eng in self.rocket.active_stage.engines:
-                eng.set_gimbal(delta_cmd)
+        if self.autopilot.mode != SASMode.OFF:
+            delta_cmd = self.autopilot.update(
+                theta=self.attitude,
+                omega=self.angular_velocity,
+                dt=dt_val,
+                velocity=self.velocity,
+            )
+            if self.rocket.active_stage is not None:
+                for eng in self.rocket.active_stage.engines:
+                    eng.set_gimbal(delta_cmd)
 
         omega_p = self._get_planet_omega()
 
@@ -854,6 +868,7 @@ class FlightVehicle:
             center_of_pressure_offset=self.rocket.center_of_pressure(),
             cl_alpha=self.cl_alpha,
             transverse_area=self._get_transverse_area(),
+            angular_velocity=self.angular_velocity,
         )
 
         warn_collision = self.state == VehicleState.IN_FLIGHT

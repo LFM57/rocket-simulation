@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from models.parts import Decoupler, Engine, FuelTank, Payload
+from models.parts import Decoupler, Engine, FuelTank, Part, Payload
 from models.rocket import Rocket, Stage
 
 
@@ -76,10 +76,20 @@ def create_falcon_9() -> Rocket:
         separation_impulse=5000.0,
     )
 
+    # Stage 1 Booster Aerodynamic Stabilizers (ensures aerodynamic stability at liftoff)
+    s1_stabilizers = Part(
+        id="s1_base_stabilizers",
+        name="Booster Aerodynamic Stabilizers",
+        dry_mass=200.0,
+        length=12.0,
+        radius=1.85,
+        position_offset=6.0,
+    )
+
     stage_1 = Stage(
         stage_id="stage_1",
         name="Stage 1 Booster",
-        parts=[*s1_engines, s1_tank, interstage],
+        parts=[*s1_engines, s1_tank, s1_stabilizers, interstage],
         staging_order=0,
         is_active=True,
         is_separated=False,

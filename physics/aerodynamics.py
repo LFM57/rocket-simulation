@@ -271,6 +271,7 @@ def calculate_aero_forces(
     *,
     cl_alpha: float = 0.0,
     transverse_area: Optional[float] = None,
+    angular_velocity: float = 0.0,
 ) -> AeroState:
     """Compute comprehensive aerodynamic state, forces, and torque on a rocket body.
 
@@ -385,7 +386,19 @@ def calculate_aero_forces(
     # r_CoP - r_CoM = (center_of_pressure_offset - center_of_mass_offset) * u_hat
     cop_com_delta = float(np.float64(center_of_pressure_offset - center_of_mass_offset))
     r_arm = u_hat * cop_com_delta
-    torque = float(np.float64(r_arm.cross(total_force)))
+    static_torque = float(np.float64(r_arm.cross(total_force)))
+
+    # Rotational pitch damping torque opposing angular velocity omega:
+    # tau_damp = - 0.5 * rho * v_rel * Cd_transverse * A_transverse * (L^2 / 12) * omega
+    tau_damp = 0.0
+    if abs(angular_velocity) > 1e-12:
+        tau_damp = -float(
+            np.float64(
+                0.5 * rho * v_rel_mag * cd_transverse * a_trans * ((length * length) / 12.0) * angular_velocity
+            )
+        )
+
+    torque = float(np.float64(static_torque + tau_damp))
 
     return AeroState(
         force=total_force,

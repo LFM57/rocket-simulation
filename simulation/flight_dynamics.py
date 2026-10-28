@@ -23,7 +23,7 @@ import numpy as np
 from core.constants import g0
 from core.integrator import make_state, rk4_step, wrap_angle_pi
 from core.vector2d import Vector2D
-from models.parts import Engine
+from models.parts import Engine, Part
 from models.rocket import Rocket, Stage
 from physics.aerodynamics import AeroState, calculate_aero_forces
 from physics.celestial import CelestialBody

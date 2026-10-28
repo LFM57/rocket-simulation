@@ -673,6 +673,16 @@ def test_decoupler_separation_impulse_applied():
     assert math.isclose(vehicle.velocity.y, expected_v.y, rel_tol=1e-6)
 
 
+def test_part_imported_in_flight_dynamics():
+    """Verify Part is imported in simulation.flight_dynamics module for static type annotations."""
+    import simulation.flight_dynamics as fd
+    from models.parts import Part
+
+    assert hasattr(fd, "Part")
+    assert fd.Part is Part
+
+
+
 
 
 
